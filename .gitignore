@@ -6,3 +6,5 @@ city_drawer/segmentedMaps/
 misc.py
 boast.py
 evaluationLoop.py
+__pycache__/
+*/__pycache__/

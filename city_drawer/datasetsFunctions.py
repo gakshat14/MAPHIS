@@ -10,6 +10,10 @@ import numpy as np
 import pandas as pd
 import json
 from PIL.TiffTags import TAGS
+from skimage.draw import disk
+import random
+from scipy import ndimage
+from math import ceil
 
 def csv_from_excel(fileName:str):
     pd.read_excel('./'+fileName).to_csv('./'+fileName[:fileName.index('.')]+'.csv', index=False)
@@ -27,6 +31,27 @@ def getTiffProperties(tiffImage, showDict = False, returnDict=False):
             print(' %s : %s' % (key, value))
     if returnDict:
         return meta_dict
+
+class feature(Dataset):
+    def __init__(self, datasetPath:Path, featureName:str, train:bool, fileFormat='.jpg', transform = None):
+        filePath = datasetPath / f'patterns/{featureName}'
+        self.lenDataset = len(list(filePath.glob(f'maskTrees*{fileFormat}')))
+        if train:
+            low, high = int(self.lenDataset*0.1), -1
+        else:
+            low, high = 0, int(self.lenDataset*0.1)
+        self.features = list(filePath.glob(f'*{fileFormat}'))[low:high]
+        self.transform = transform
+
+    def __len__(self): 
+        return len(self.features)
+
+    def __getitem__(self, index:int):  
+        feature = openFileFunction(self.features[index])
+        if self.transform:
+            feature = self.transform(feature)
+        return feature
+
 
 class syntheticCity(Dataset):
     def __init__(self, datasetPath:Path, train=True, fileFormat='.npy', transform = None):
@@ -126,8 +151,52 @@ class pad(object):
                 'mapName':sample['mapName']
                 }
 
-def openfile(filePath, fileExtension:str):
+def openFileFunction(filePath, fileExtension:str):
     if fileExtension =='.npy':
-        return np.load(filePath)
+        raw = np.load(filePath)
+    elif fileExtension =='.jpg':
+        raw = Image.open(filePath)
     else:
-        raise ValueError ('Wrong fileExtension string')
+        raise NotImplementedError ('Only .npy and .jpg implemented')
+    
+    return ToTensor(raw)
+
+def makeSquare(array:np.float32) -> np.float32:
+    maxLength = max(array.shape)    
+    return np.pad(array, ((maxLength-np.shape(array)[0]),(maxLength-np.shape(array)[1])), 'constant', constant_values=1)
+
+def cropOutskirts(array:np.float32) -> np.float32:
+    length = array.shape[0]
+    mask = np.zeros((length,length))
+    rr, cc = disk((int(length/2), int(length/2)), int(length/2), shape=np.shape(array))
+    mask[rr,cc] = 1
+    return np.where(mask==0, array, 1)
+
+def rotate(array:np.float32) -> np.float32:
+    rotationAngle = random.randint(0,180)
+    rotatedArray = ndimage.rotate(array, rotationAngle, reshape=True, mode='constant', cval=1) 
+    return rotatedArray
+
+class TreePipeline(object):
+    def __init__(self, outputSize):
+        assert isinstance(outputSize, (int, tuple))
+        self.outputSize = outputSize
+        self.finalImage = np.ones((outputSize, outputSize), np.float32)
+
+    def __call__(self, inputTree):
+        # First, make the input square
+        paddedTree = makeSquare(inputTree)
+        # Then, crop out the unwanted outskirts of the image
+        croppedTree = cropOutskirts(paddedTree)
+        # Then, rotate the cleaned pattern
+        rotatedTree = rotate(croppedTree)
+        # Then, resize the pattern if it is too large (self.outputSize)
+        length = rotatedTree.shape[0]
+        if self.outputSize < length:
+            rotatedTree = rotatedTree[::ceil(rotatedTree.shape[0]/self.outputSize), ::ceil(rotatedTree.shape[0]/self.outputSize)]
+            length = rotatedTree.shape[0]
+        # Finally, integrate it in a larger image.
+        x = random.randint(0, self.outputSize-length)
+        y = random.randint(0, self.outputSize-length)
+        self.finalImage[x:x+length, y:y+length] = rotatedTree
+        return self.finalImage
