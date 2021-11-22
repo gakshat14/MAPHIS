@@ -35,19 +35,20 @@ def getTiffProperties(tiffImage, showDict = False, returnDict=False):
 class feature(Dataset):
     def __init__(self, datasetPath:Path, featureName:str, train:bool, fileFormat='.jpg', transform = None):
         filePath = datasetPath / f'patterns/{featureName}'
-        self.lenDataset = len(list(filePath.glob(f'maskTrees*{fileFormat}')))
+        self.lenDataset = len(list(filePath.glob(f'*{fileFormat}')))
         if train:
             low, high = int(self.lenDataset*0.1), -1
         else:
             low, high = 0, int(self.lenDataset*0.1)
         self.features = list(filePath.glob(f'*{fileFormat}'))[low:high]
         self.transform = transform
+        self.fileFormat = fileFormat
 
     def __len__(self): 
         return len(self.features)
 
     def __getitem__(self, index:int):  
-        feature = openFileFunction(self.features[index])
+        feature = openFileFunction(self.features[index], self.fileFormat)
         if self.transform:
             feature = self.transform(feature)
         return feature
@@ -153,37 +154,39 @@ class pad(object):
 
 def openFileFunction(filePath, fileExtension:str):
     if fileExtension =='.npy':
-        raw = np.load(filePath)
+        return np.load(filePath)
     elif fileExtension =='.jpg':
-        raw = Image.open(filePath)
+        return np.where(np.array(Image.open(filePath))<128,0,1)
     else:
         raise NotImplementedError ('Only .npy and .jpg implemented')
     
-    return ToTensor(raw)
 
 def makeSquare(array:np.float32) -> np.float32:
-    maxLength = max(array.shape)    
-    return np.pad(array, ((maxLength-np.shape(array)[0]),(maxLength-np.shape(array)[1])), 'constant', constant_values=1)
+    maxLength = max(array.shape)  
+    return np.pad(array, ((0,maxLength-np.shape(array)[0]),(0,maxLength-np.shape(array)[1])), 'constant', constant_values=1)
 
 def cropOutskirts(array:np.float32) -> np.float32:
     length = array.shape[0]
     mask = np.zeros((length,length))
     rr, cc = disk((int(length/2), int(length/2)), int(length/2), shape=np.shape(array))
     mask[rr,cc] = 1
-    return np.where(mask==0, array, 1)
+    return np.where(mask==1, array, 1)
 
 def rotate(array:np.float32) -> np.float32:
     rotationAngle = random.randint(0,180)
     rotatedArray = ndimage.rotate(array, rotationAngle, reshape=True, mode='constant', cval=1) 
     return rotatedArray
 
+
+import matplotlib.pyplot as plt
+
 class TreePipeline(object):
-    def __init__(self, outputSize):
+    def __init__(self, outputSize:int):
         assert isinstance(outputSize, (int, tuple))
         self.outputSize = outputSize
-        self.finalImage = np.ones((outputSize, outputSize), np.float32)
 
-    def __call__(self, inputTree):
+    def __call__(self, inputTree:np.float32):
+        finalImage =  np.ones((self.outputSize, self.outputSize), np.float32)
         # First, make the input square
         paddedTree = makeSquare(inputTree)
         # Then, crop out the unwanted outskirts of the image
@@ -198,5 +201,5 @@ class TreePipeline(object):
         # Finally, integrate it in a larger image.
         x = random.randint(0, self.outputSize-length)
         y = random.randint(0, self.outputSize-length)
-        self.finalImage[x:x+length, y:y+length] = rotatedTree
-        return self.finalImage
+        finalImage[x:x+length, y:y+length] = rotatedTree
+        return 1-finalImage
