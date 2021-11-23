@@ -14,6 +14,7 @@ from skimage.draw import disk
 import random
 from scipy import ndimage
 from math import ceil
+import matplotlib.pyplot as plt
 
 def csv_from_excel(fileName:str):
     pd.read_excel('./'+fileName).to_csv('./'+fileName[:fileName.index('.')]+'.csv', index=False)
@@ -52,7 +53,6 @@ class feature(Dataset):
         if self.transform:
             feature = self.transform(feature)
         return feature
-
 
 class syntheticCity(Dataset):
     def __init__(self, datasetPath:Path, train=True, fileFormat='.npy', transform = None):
@@ -159,7 +159,6 @@ def openFileFunction(filePath, fileExtension:str):
         return np.where(np.array(Image.open(filePath))<128,0,1)
     else:
         raise NotImplementedError ('Only .npy and .jpg implemented')
-    
 
 def makeSquare(array:np.float32) -> np.float32:
     maxLength = max(array.shape)  
@@ -176,9 +175,6 @@ def rotate(array:np.float32) -> np.float32:
     rotationAngle = random.randint(0,180)
     rotatedArray = ndimage.rotate(array, rotationAngle, reshape=True, mode='constant', cval=1) 
     return rotatedArray
-
-
-import matplotlib.pyplot as plt
 
 class TreePipeline(object):
     def __init__(self, outputSize:int):

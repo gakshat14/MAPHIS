@@ -1,5 +1,6 @@
-from torch.nn import Module, ModuleDict, Conv2d, ConvTranspose2d, Sigmoid, LeakyReLU, parameter
-from torch import cat, linspace, meshgrid, arange, cos, sin, exp, linalg, Tensor
+from torch.nn import Module, ModuleDict, Conv2d, ConvTranspose2d, Sigmoid, LeakyReLU, parameter, BatchNorm2d, Dropout, ReLU, init
+from torch import cat, linspace, meshgrid, arange, cos, sin, exp, linalg, Tensor, device, load
+from torch.optim import Adam
 import numpy as np
 import math
 
@@ -119,4 +120,104 @@ class gaborFilters():
     def getFilter(self, theta:int) -> np.float32:
         Filter = cos(2*3.1415*self.frequency*(self.gridX*cos(theta) + self.gridY*sin(theta)))*exp(-(self.gridX*self.gridX+self.gridY*self.gridY)/(2*self.sigma*self.sigma))
         return Filter/linalg.norm(Filter)
+
+
+class generator(Module):
+    def __init__(self, ngf):
+        super(generator, self).__init__()
+        self.name = 'genPaper'
+        self.upconv_0 = ConvTranspose2d(100, 8*ngf, 4, 1, 0, bias=False)        
+        4
+        self.upconv_1 = ConvTranspose2d(8*ngf, 8*ngf, 4, 2, 1, bias=False)      
+        8  
+        self.upconv_2 = ConvTranspose2d(8*ngf, 4*ngf, 4, 2, 1, bias=False)  
+        16      
+        self.upconv_3 = ConvTranspose2d(4*ngf, 2*ngf, 4, 2, 1, bias=False) 
+        32      
+        self.upconv_4 = ConvTranspose2d(2*ngf, ngf, 4, 2, 1, bias=False)   
+        64     
+        self.upconv_5 = ConvTranspose2d(ngf, 1, 4, 2, 1, bias=False) 
+        128       
+ 
+        self.bn_4 = BatchNorm2d(1*ngf)
+        self.bn_3 = BatchNorm2d(2*ngf)
+        self.bn_2 = BatchNorm2d(4*ngf)
+        self.bn_1 = BatchNorm2d(8*ngf)
+        self.bn_0 = BatchNorm2d(8*ngf)
+        
+        self.dropout = Dropout()
+        self.sigmoid = Sigmoid()
+        self.relu = ReLU()
+
+    def forward(self, y):
+        x0 = self.relu(self.bn_0(self.upconv_0(y)))
+        x1 = self.relu(self.bn_1(self.upconv_1(x0)))
+        x2 = self.relu(self.bn_2(self.upconv_2(x1)))
+        x3 = self.relu(self.bn_3(self.upconv_3(x2)))
+        x4 = self.relu(self.bn_4(self.upconv_4(x3)))
+        x = self.sigmoid(self.upconv_5(x4))
+        return x
+
+class discriminator(Module):
+    def __init__(self, ngf):
+        super(discriminator, self).__init__()
+        
+        self.conv_0 = Conv2d(1, ngf, 4, 2, 1, bias=False)
+        #64
+        self.conv_1 = Conv2d(ngf, ngf*2, 4, 2, 1, bias=False)
+        #32
+        self.conv_2 = Conv2d(ngf*2, ngf*4, 4, 2, 1, bias=False)
+        #16
+        self.conv_3 = Conv2d(ngf*4, 1, 3, 1, 1, bias=False)
+        
+        self.bn_1 = BatchNorm2d(2*ngf)
+        self.bn_2 = BatchNorm2d(4*ngf)
+        
+        self.dropout = Dropout()
+        self.sigmoid = Sigmoid()
+        self.lRelu = LeakyReLU(0.2)
+
+        
+    def forward(self, cad):
+        out_0 = self.lRelu(self.conv_0(cad))
+        #out_0: [bs,  1*ngf, 64, 64]        
+        out_1 = self.lRelu(self.bn_1(self.conv_1(out_0)))
+        #out_1: [bs,  2*ngf, 32, 32]
+        out_2 = self.lRelu(self.bn_2(self.conv_2(out_1)))
+        #out_2: [bs,  4*ngf, 16, 16]
+        return self.sigmoid(self.conv_3(out_2))
+    
+
+def initialiseWeights(m):
+    classname = m.__class__.__name__
+    if classname.find('BatchNorm') != -1:
+        init.normal_(m.weight.data, 1.0, 0.02)
+        init.constant_(m.bias.data, 0)
+    elif classname.find('ConvTranspose2d') != -1:
+        init.normal_(m.weight.data, 0.01, 0.02)
+    elif classname.find('Conv2d') != -1:
+        init.normal_(m.weight.data, 0.01, 0.02)
+
+class GAN(Module):
+    def __init__(self, parametersDict:dict):
+        ## Assert that all parameters are here:
+        for paramKwd in ['nfGenerator', 'nfDetector']:
+            if not parametersDict[paramKwd]:raise KeyError (f'{paramKwd} is missing')
+        super(GAN, self).__init__()
+        self.device = device
+        self.networks =  ModuleDict()  
+        self.networks['generator'] = generator(parametersDict['nfGenerator'])
+        self.networks['discriminator'] = discriminator(parametersDict['nfDetector'])    
+        
+        if self.networks is not None:
+            for network in self.networks.values():
+                initialiseWeights(network)
+               
+    def load(self, loadPath):
+        self.networks.load_state_dict(load(loadPath).state_dict())
+
+    def setOptimisers(self, lr:float):
+        self.optimisers = {}
+        for key, value in self.networks.items():
+            self.optimisers[key] = Adam(value.parameters(), lr=lr)
 
