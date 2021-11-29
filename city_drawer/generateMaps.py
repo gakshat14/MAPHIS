@@ -12,6 +12,11 @@ import argparse
 from typing import Tuple
 from pyprojroot import here
 
+from threading import Thread
+from queue import Queue
+
+q = Queue()
+
 PSMALL  = 0.15
 PMEDIUM = 0.15
 PLARGE  = 0.3
@@ -177,6 +182,7 @@ def generateTreesAndMask(patternsDict:dict, sizeImg=512)-> Tuple[np.float32, np.
     image = np.ones((sizeImg,sizeImg), np.float32)
     maskTrees = np.zeros((sizeImg,sizeImg), np.float32)
     maskStripes = np.zeros((sizeImg,sizeImg), np.float32)
+    
     tbSizeVar = random.choices([256,sizeImg], [PSMALL+PMEDIUM+PLARGE, PHUGE])[0]
     if tbSizeVar == sizeImg:   
         blockOfFlats = random.choices([0,1], [0.5,0.5])[0]
@@ -264,31 +270,45 @@ def generateTreesAndMask(patternsDict:dict, sizeImg=512)-> Tuple[np.float32, np.
 
     _, image = cv2.threshold(image, 0.2, 1, cv2.THRESH_BINARY)
     return lines*image, maskTrees, maskStripes
+ 
+def genMap(savePath, patternsDict):
+    global q
+    Path(f'{savePath}').mkdir(parents=True ,exist_ok=True)
+    while True:
+        counter = q.get()
 
-
+        image, maskTrees, maskStripes = generateTreesAndMask(patternsDict)
+        
+        np.save(f'{savePath}/image_{counter}', image)
+        np.save(f'{savePath}/maskTrees_{counter}', maskTrees)
+        np.save(f'{savePath}/maskStripes_{counter}', maskStripes)
+            
+        q.task_done()
+        
 def main(args):
     patternsDict = getPatterns(args.datasetPath)
-    counter = len(glob.glob(f'{args.savePath}/image*'))
-    for i in range(args.nSamples):
-        image, maskTrees, maskStripes = generateTreesAndMask(patternsDict)
-        if args.treatment == 'show':
+    
+    if args.treatment == "show":    
+        counter = len(glob.glob(f'{args.savePath}/image*'))
+        for i in range(args.nSamples):
+            image, maskTrees, maskStripes = generateTreesAndMask(patternsDict)
             plt.matshow(image)
             plt.show()
             plt.matshow(maskStripes + maskTrees)
-            plt.show()
-
-        elif args.treatment == 'save':
-            Path(f'{args.savePath}').mkdir(parents=True ,exist_ok=True)
-            np.save(f'{args.savePath}/image_{counter}', image)
-            np.save(f'{args.savePath}/maskTrees_{counter}', maskTrees)
-            np.save(f'{args.savePath}/maskStripes_{counter}', maskStripes)
-        else:
-            raise NotImplementedError ("Can only save or show")
-
-        counter+=1
-        if i%int(args.nSamples/10)==0:
-            print(f'{i} / {args.nSamples}')
-
+            plt.show()    
+            
+    elif args.treatment == "save":
+        for i in range(args.nSamples):
+            q.put(i)
+        for t in range(args.maxThreads):
+            worker = Thread(target = genMap, args = (args.savePath, patternsDict))
+            worker.daemon = True
+            worker.start()
+        q.join()
+    
+    else:
+        raise NotImplementedError ("Can only save or show")
+    
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Tree Generation')
     parser.add_argument('--datasetPath', required=False, type=PurePath, default = here().joinpath('datasets/patterns'))
@@ -297,8 +317,10 @@ if __name__ == '__main__':
     parser.add_argument('--savePath', required=False, type=PurePath, default = here().joinpath('datasets/syntheticCities'))
     parser.add_argument('--imageSize', required=False, type=int, default = 512)
     parser.add_argument('--treatment', required=False, type=str, default='show')
+    parser.add_argument('--maxThreads', required=False, type=int, default=1)
     args = parser.parse_args()
-
+    
     savePath = Path(args.savePath)
     savePath.mkdir(parents=True, exist_ok=True)
+    
     main(args)
