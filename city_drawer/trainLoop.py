@@ -18,8 +18,8 @@ def main():
     parser.add_argument('--datasetPath', required=False, type=PurePath, default = here().joinpath('datasets'))
     parser.add_argument('--imageSize', required=False, type=int, default = 512)
     parser.add_argument('--epochs', required=False, type=int, default = 3)
-    parser.add_argument('--numWorkers', required=False, type=int, default = 2)
-    parser.add_argument('--feature', required=False, type=str, default = '')
+    parser.add_argument('--numWorkers', required=False, type=int, default = 0)
+    parser.add_argument('--feature', required=False, type=str, default = 'trees')
     parser.add_argument('--process', required=False, type=str, default = 'segment')
     args = parser.parse_args()
 
@@ -58,13 +58,13 @@ def main():
             optimizer.zero_grad()
             output = modelSegment(inputImage)
             
-            loss = criterion(output, (treesMask+stripesMask))
+            loss = criterion(output, maskDict[args.feature])
 
             loss.backward()
             optimizer.step()
 
             running_loss += loss.item()
-            print(f'[{i}] / [{int(3600/args.batchSize)}] --> Item loss = {loss.item():.4f}')
+            print(f'[{i}] / [{int(6000/args.batchSize)}] --> Item loss = {loss.item():.4f}')
 
             if i%100==0:
                 plt.imshow(output[0,0].detach().cpu())

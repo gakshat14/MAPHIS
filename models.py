@@ -1,18 +1,218 @@
+from torch.autograd.grad_mode import F
 from torch.nn import Module, Upsample
 from torch import Tensor, where
 from CRAFT.craft_utils import getDetBoxes, adjustResultCoordinates
-from CRAFT.craft import CRAFT
+#from CRAFT.craft import CRAFT
 from collections import OrderedDict
 from pathlib import Path
 from torch import device, load
-from CRAFT.refinenet import RefineNet
-from torch.nn import Module, ModuleDict, Conv2d, ConvTranspose2d, Sigmoid, LeakyReLU, parameter, MaxPool2d, Linear
-from torch import cat, linspace, meshgrid, arange, cos, sin, exp, linalg, Tensor, flatten
+#from CRAFT.refinenet import RefineNet
+from torch.nn import Module, ModuleDict, Conv2d, ConvTranspose2d, Sigmoid, LeakyReLU, parameter, MaxPool2d, Linear, BatchNorm2d, Sequential, init, ReLU
+from torch import cat, linspace, meshgrid, arange, cos, sin, exp, linalg, Tensor, flatten, randn
+import torch.nn.functional as F
 import math
 import matplotlib.pyplot as plt
 
+from collections import namedtuple
+
 from torchvision import models
 from torchvision.models.vgg import model_urls
+
+class RefineNet(Module):
+    def __init__(self):
+        super(RefineNet, self).__init__()
+
+        self.last_conv = Sequential(
+            Conv2d(34, 64, kernel_size=3, padding=1), BatchNorm2d(64), ReLU(inplace=True),
+            Conv2d(64, 64, kernel_size=3, padding=1), BatchNorm2d(64), ReLU(inplace=True),
+            Conv2d(64, 64, kernel_size=3, padding=1), BatchNorm2d(64), ReLU(inplace=True)
+        )
+
+        self.aspp1 = Sequential(
+            Conv2d(64, 128, kernel_size=3, dilation=6, padding=6), BatchNorm2d(128), ReLU(inplace=True),
+            Conv2d(128, 128, kernel_size=1), BatchNorm2d(128), ReLU(inplace=True),
+            Conv2d(128, 1, kernel_size=1)
+        )
+
+        self.aspp2 = Sequential(
+            Conv2d(64, 128, kernel_size=3, dilation=12, padding=12), BatchNorm2d(128), ReLU(inplace=True),
+            Conv2d(128, 128, kernel_size=1), BatchNorm2d(128), ReLU(inplace=True),
+            Conv2d(128, 1, kernel_size=1)
+        )
+
+        self.aspp3 = Sequential(
+            Conv2d(64, 128, kernel_size=3, dilation=18, padding=18), BatchNorm2d(128), ReLU(inplace=True),
+            Conv2d(128, 128, kernel_size=1), BatchNorm2d(128), ReLU(inplace=True),
+            Conv2d(128, 1, kernel_size=1)
+        )
+
+        self.aspp4 = Sequential(
+            Conv2d(64, 128, kernel_size=3, dilation=24, padding=24), BatchNorm2d(128), ReLU(inplace=True),
+            Conv2d(128, 128, kernel_size=1), BatchNorm2d(128), ReLU(inplace=True),
+            Conv2d(128, 1, kernel_size=1)
+        )
+
+        init_weights(self.last_conv.modules())
+        init_weights(self.aspp1.modules())
+        init_weights(self.aspp2.modules())
+        init_weights(self.aspp3.modules())
+        init_weights(self.aspp4.modules())
+
+    def forward(self, y, upconv4):
+        refine = cat([y.permute(0,3,1,2), upconv4], dim=1)
+        refine = self.last_conv(refine)
+
+        aspp1 = self.aspp1(refine)
+        aspp2 = self.aspp2(refine)
+        aspp3 = self.aspp3(refine)
+        aspp4 = self.aspp4(refine)
+
+        #out = torch.add([aspp1, aspp2, aspp3, aspp4], dim=1)
+        out = aspp1 + aspp2 + aspp3 + aspp4
+        return out.permute(0, 2, 3, 1)  # , refine.permute(0,2,3,1)
+
+
+
+class double_conv(Module):
+    def __init__(self, in_ch, mid_ch, out_ch):
+        super(double_conv, self).__init__()
+        self.conv = Sequential(
+            Conv2d(in_ch + mid_ch, mid_ch, kernel_size=1),
+            BatchNorm2d(mid_ch),
+            ReLU(inplace=True),
+            Conv2d(mid_ch, out_ch, kernel_size=3, padding=1),
+            BatchNorm2d(out_ch),
+            ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        return x
+
+
+class CRAFT(Module):
+    def __init__(self, pretrained=False, freeze=False):
+        super(CRAFT, self).__init__()
+
+        """ Base network """
+        self.basenet = vgg16_bn(pretrained, freeze)
+
+        """ U network """
+        self.upconv1 = double_conv(1024, 512, 256)
+        self.upconv2 = double_conv(512, 256, 128)
+        self.upconv3 = double_conv(256, 128, 64)
+        self.upconv4 = double_conv(128, 64, 32)
+
+        num_class = 2
+        self.conv_cls = Sequential(
+            Conv2d(32, 32, kernel_size=3, padding=1), ReLU(inplace=True),
+            Conv2d(32, 32, kernel_size=3, padding=1), ReLU(inplace=True),
+            Conv2d(32, 16, kernel_size=3, padding=1), ReLU(inplace=True),
+            Conv2d(16, 16, kernel_size=1), ReLU(inplace=True),
+            Conv2d(16, num_class, kernel_size=1),
+        )
+
+        init_weights(self.upconv1.modules())
+        init_weights(self.upconv2.modules())
+        init_weights(self.upconv3.modules())
+        init_weights(self.upconv4.modules())
+        init_weights(self.conv_cls.modules())
+        
+    def forward(self, x):
+        """ Base network """
+        sources = self.basenet(x)
+
+        """ U network """
+        y = cat([sources[0], sources[1]], dim=1)
+        y = self.upconv1(y)
+
+        y = F.interpolate(y, size=sources[2].size()[2:], mode='bilinear', align_corners=False)
+        y = cat([y, sources[2]], dim=1)
+        y = self.upconv2(y)
+
+        y = F.interpolate(y, size=sources[3].size()[2:], mode='bilinear', align_corners=False)
+        y = cat([y, sources[3]], dim=1)
+        y = self.upconv3(y)
+
+        y = F.interpolate(y, size=sources[4].size()[2:], mode='bilinear', align_corners=False)
+        y = cat([y, sources[4]], dim=1)
+        feature = self.upconv4(y)
+
+        y = self.conv_cls(feature)
+
+        return y.permute(0,2,3,1), feature
+
+if __name__ == '__main__':
+    model = CRAFT(pretrained=True).cuda()
+    output, _ = model(randn(1, 3, 768, 768).cuda())
+    print(output.shape)
+
+def init_weights(modules):
+    for m in modules:
+        if isinstance(m, Conv2d):
+            init.xavier_uniform_(m.weight.data)
+            if m.bias is not None:
+                m.bias.data.zero_()
+        elif isinstance(m, BatchNorm2d):
+            m.weight.data.fill_(1)
+            m.bias.data.zero_()
+        elif isinstance(m, Linear):
+            m.weight.data.normal_(0, 0.01)
+            m.bias.data.zero_()
+
+class vgg16_bn(Module):
+    def __init__(self, pretrained=True, freeze=True):
+        super(vgg16_bn, self).__init__()
+        model_urls['vgg16_bn'] = model_urls['vgg16_bn'].replace('https://', 'http://')
+        vgg_pretrained_features = models.vgg16_bn(pretrained=pretrained).features
+        self.slice1 = Sequential()
+        self.slice2 = Sequential()
+        self.slice3 = Sequential()
+        self.slice4 = Sequential()
+        self.slice5 = Sequential()
+        for x in range(12):         # conv2_2
+            self.slice1.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(12, 19):         # conv3_3
+            self.slice2.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(19, 29):         # conv4_3
+            self.slice3.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(29, 39):         # conv5_3
+            self.slice4.add_module(str(x), vgg_pretrained_features[x])
+
+        # fc6, fc7 without atrous conv
+        self.slice5 = Sequential(
+                MaxPool2d(kernel_size=3, stride=1, padding=1),
+                Conv2d(512, 1024, kernel_size=3, padding=6, dilation=6),
+                Conv2d(1024, 1024, kernel_size=1)
+        )
+
+        if not pretrained:
+            init_weights(self.slice1.modules())
+            init_weights(self.slice2.modules())
+            init_weights(self.slice3.modules())
+            init_weights(self.slice4.modules())
+
+        init_weights(self.slice5.modules())        # no pretrained model for fc6 and fc7
+
+        if freeze:
+            for param in self.slice1.parameters():      # only first conv
+                param.requires_grad= False
+
+    def forward(self, X):
+        h = self.slice1(X)
+        h_relu2_2 = h
+        h = self.slice2(h)
+        h_relu3_2 = h
+        h = self.slice3(h)
+        h_relu4_3 = h
+        h = self.slice4(h)
+        h_relu5_3 = h
+        h = self.slice5(h)
+        h_fc7 = h
+        vgg_outputs = namedtuple("VggOutputs", ['fc7', 'relu5_3', 'relu4_3', 'relu3_2', 'relu2_2'])
+        out = vgg_outputs(h_fc7, h_relu5_3, h_relu4_3, h_relu3_2, h_relu2_2)
+        return out
+
 
 def copyStateDict(state_dict):
     if list(state_dict.keys())[0].startswith("module"):

@@ -110,7 +110,7 @@ def allocateImgsTodict(patternDict:dict, pattern:np.float32, mask:np.float32, co
     patternDict[f'{count}'] = {'pattern':pattern, 'mask':mask}
     return patternDict, count+1
 
-def getPatterns(datasetPath:str) -> dict:
+def getPatterns(datasetPath:str, featureName='Trees') -> dict:
     patternsDict = {}
     smallPatterns  = {}
     mediumPatterns = {}
@@ -121,7 +121,7 @@ def getPatterns(datasetPath:str) -> dict:
     countLarge  = 0
     countHuge = 0
     for i in range(10):
-        pattern = cv2.imread(f'{datasetPath}/arbre{i}.jpg', cv2.IMREAD_GRAYSCALE)
+        pattern = cv2.imread(f'{datasetPath}/{featureName}/{i}.jpg', cv2.IMREAD_GRAYSCALE)
         mask = np.zeros(np.shape(pattern))
         rr, cc = disk((int(np.shape(pattern)[0])/2, int(np.shape(pattern)[1])/2), int(min(np.shape(pattern)))/2, shape=np.shape(mask))
         mask[rr, cc] = 1
@@ -134,7 +134,7 @@ def getPatterns(datasetPath:str) -> dict:
         else:
             countHuge+=1
 
-    assert(countSmall+countMedium+countLarge+countHuge == len(glob.glob(f'{datasetPath}/*.jpg')))
+    assert(countSmall+countMedium+countLarge+countHuge == len(glob.glob(f'{datasetPath}/{featureName}/*.jpg')))
     patternsDict = {'64':smallPatterns, '128':mediumPatterns, '256':largePatterns, '512':hugePatterns}
     return patternsDict
 
@@ -312,12 +312,11 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Tree Generation')
     parser.add_argument('--datasetPath', required=False, type=PurePath, default = here().joinpath('datasets/patterns'))
-    parser.add_argument('--nSamples', required=False, type=int, default = 4000)
-    parser.add_argument('--randomSeed', required=False, type=int, default = 753159)
+    parser.add_argument('--nSamples', required=False, type=int, default = 6000)
     parser.add_argument('--savePath', required=False, type=PurePath, default = here().joinpath('datasets/syntheticCities'))
     parser.add_argument('--imageSize', required=False, type=int, default = 512)
     parser.add_argument('--treatment', required=False, type=str, default='show')
-    parser.add_argument('--maxThreads', required=False, type=int, default=1)
+    parser.add_argument('--maxThreads', required=False, type=int, default=6)
     args = parser.parse_args()
     
     savePath = Path(args.savePath)

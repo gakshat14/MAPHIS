@@ -66,7 +66,7 @@ class Application(ttk.Frame):
         self.saveButton = tk.Button(self.buttonFrame, text="Save and Update", command=lambda:[self.classify(self.textField.get()), self.clearTextInput(self.textField),self.updateCanvas()])
         self.saveButton.grid(row=rowButtonActions,column=1)
 
-        self.fpButton = tk.Button(self.buttonFrame, text="False Positive", command=lambda:[self.classify("False Positive"), self.updateCanvas()])
+        self.fpButton = tk.Button(self.buttonFrame, text="False Positive", command=lambda:[self.classify("false positive"), self.updateCanvas()])
         self.fpButton.grid(row=rowButtonActions,column=2)
 
         '''self.buttonResize = ttk.Button(self.buttonFrame, text="Bonuses", command=self.popup_bonus)
@@ -80,6 +80,9 @@ class Application(ttk.Frame):
 
         self.indexJumpButton = ttk.Button(self.buttonFrame , text="Jump to index", command=lambda:[self.updateCanvas(self.indexJumpTextBox.get()), self.clearTextInput(self.indexJumpTextBox)])
         self.indexJumpButton.grid(row=rowIndexInfo,column=2)
+
+        self.indexJumpButton = ttk.Button(self.buttonFrame , text="Previous one", command=lambda:[self.updateCanvas(str(self.currentThumbnailIndex-1))])
+        self.indexJumpButton.grid(row=rowIndexInfo,column=3)
 
         self.buttonLampPost = tk.Button(self.buttonFrame, text="L.P", command=lambda:[self.classify("lamppost"),self.updateCanvas()])
         self.buttonLampPost.grid(row=rowButtonPredefined0,column=0)
@@ -115,7 +118,7 @@ class Application(ttk.Frame):
         self.buttonBank.grid(row=rowButtonPredefined3,column=3)
         self.buttonPub = tk.Button(self.buttonFrame, text="pub", command=lambda:[self.classify("pub"), self.updateCanvas()])
         self.buttonPub.grid(row=rowButtonPredefined4,column=0)
-        self.buttonPublicHouse = tk.Button(self.buttonFrame, text="P.H", command=lambda:[self.classify("publichouse"), self.updateCanvas()])
+        self.buttonPublicHouse = tk.Button(self.buttonFrame, text="P.H", command=lambda:[self.classify("public house"), self.updateCanvas()])
         self.buttonPublicHouse.grid(row=rowButtonPredefined4,column=1)
         self.buttonHotel = tk.Button(self.buttonFrame, text="hotel", command=lambda:[self.classify("hotel"), self.updateCanvas()])
         self.buttonHotel.grid(row=rowButtonPredefined4,column=2)
@@ -169,9 +172,9 @@ class Application(ttk.Frame):
         self.currentIndexDisplay['text'] = f'({self.currentThumbnailIndex}) / ({self.nLabels})'
 
     def classify(self, savedClass:str):
-        coordinates = self.currentCoordinates
+        coordinates = self.currentCoordinates.copy()
 
-        if savedClass not in self.featureList:        
+        if savedClass.lower() not in self.featureList:        
             print(f"Adding class {savedClass} in {self.classifiedFolderPath.parent / Path(f'classes.json')}")
             self.featureList[savedClass] = len(self.featureList)
         
@@ -179,8 +182,8 @@ class Application(ttk.Frame):
         self.classifiedDict[f'{self.currentThumbnailIndex}'] = coordinates
 
         try:
-            self.classifiedDict['Not Classified'].remove(self.currentThumbnailIndex)
-            self.classifiedDict['Classified'].append(self.currentThumbnailIndex)
+            self.progressDict['Not Classified'].remove(self.currentThumbnailIndex)
+            self.progressDict['Classified'].append(self.currentThumbnailIndex)
         except ValueError:
             pass
 
@@ -208,6 +211,7 @@ class Application(ttk.Frame):
         print(self.classifiedFolderPath / f'{self.currentTileName}.json')
         writeJsonFile(Path(f'{self.classifiedFolderPath.parent}/classes.json'), {key: index for index, key in enumerate(self.featureList)})
         writeJsonFile(self.classifiedFolderPath / f'{self.currentTileName}.json', self.classifiedDict)
+        writeJsonFile(self.classifiedFolderPath / f'{self.currentTileName}_progress.json', self.progressDict)
         print(f'Progress saved in {self.currentTileName}.json')
 
     def setCurrentlyOpenedFile(self, tileName:str):
@@ -233,16 +237,22 @@ class Application(ttk.Frame):
 
     def loadClassifiedDict(self):
         if Path(self.classifiedFolderPath / f'{self.currentTileName}.json').is_file()==False:
-            self.classifiedDict = {'Not Classified':[i for i in range(self.nLabels)],
-                                'Classified': []}
+            self.classifiedDict = {}
             writeJsonFile(self.classifiedFolderPath / f'{self.currentTileName}.json', self.classifiedDict)
         else:
             self.classifiedDict = json.load(open(self.classifiedFolderPath / f'{self.currentTileName}.json'))
 
-        if len(self.classifiedDict['Not Classified']) !=0:
-            self.currentThumbnailIndex = self.classifiedDict['Not Classified'][0]
+        if Path(self.classifiedFolderPath / f'{self.currentTileName}_progress.json').is_file()==False:
+            self.progressDict = {'Not Classified':[i for i in range(self.nLabels)],
+                                'Classified': []}
+            writeJsonFile(self.classifiedFolderPath / f'{self.currentTileName}.json', self.progressDict)
         else:
-            self.currentThumbnailIndex = self.classifiedDict['Classified'][0]
+            self.progressDict = json.load(open(self.classifiedFolderPath / f'{self.currentTileName}_progress.json'))
+
+        if len(self.progressDict['Not Classified']) !=0:
+            self.currentThumbnailIndex = self.progressDict['Not Classified'][0]
+        else:
+            self.currentThumbnailIndex = self.progressDict['Classified'][0]
 
     def popup_bonus(self):
         win = tk.Toplevel()

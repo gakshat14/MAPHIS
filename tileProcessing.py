@@ -31,17 +31,26 @@ def main():
     device = torch.device('cuda:0')
     labelExtractorModel = labelExtractor(args.savedPathDetection, args.savedPathRefiner, device, args.textThreshold, args.linkThreshold, args.lowText)
 
-    tilesSegmenterParameters = json.load(open(f'city_drawer/saves/SegmentModelParameters.json'))
-    tilesSegmenter = segmentationModel(tilesSegmenterParameters)
-    if Path(f'city_drawer/saves/SegmentModelStateDict.pth').is_file():
-        tilesSegmenter.load_state_dict(torch.load(f'city_drawer/saves/SegmentModelStateDict.pth'))
+    treesSegmenterParameters = json.load(open(f'city_drawer/saves/treesSegmentModelParameters.json'))
+    treesSegmenter = segmentationModel(treesSegmenterParameters)
+    if Path(f'city_drawer/saves/treesSegmentModelStateDict.pth').is_file():
+        treesSegmenter.load_state_dict(torch.load(f'city_drawer/saves/treesSegmentModelStateDict.pth'))
     else:
         raise FileNotFoundError ("There is no trained model")
-    tilesSegmenter.cuda(device)
-    tilesSegmenter.eval()
+    treesSegmenter.cuda(device)
+    treesSegmenter.eval()
+
+    stripesSegmenterParameters = json.load(open(f'city_drawer/saves/stripesSegmentModelParameters.json'))
+    stripesSegmenter = segmentationModel(stripesSegmenterParameters)
+    if Path(f'city_drawer/saves/stripesSegmentModelStateDict.pth').is_file():
+        stripesSegmenter.load_state_dict(torch.load(f'city_drawer/saves/stripesSegmentModelStateDict.pth'))
+    else:
+        raise FileNotFoundError ("There is no trained model")
+    stripesSegmenter.cuda(device)
+    stripesSegmenter.eval()
 
     cityName = matchKeyToName(f'{args.datasetPath}/cityKey.json', args.cityKey)
-    allTilesPaths = list(Path(f'{args.datasetPath}/cities/{cityName}').glob(f'*/*/*{args.mapFileExtension}'))
+    allTilesPaths = list(Path(f'{args.datasetPath}/cities/{cityName}').glob(f'*/*/0105033010241{args.mapFileExtension}'))
     
     labelSavePath = Path(f'datasets/labels/{cityName}')
     labelSavePath.mkdir(parents=True, exist_ok=True)
@@ -56,14 +65,14 @@ def main():
         nDetectedLabels = 0
         for i, data in enumerate(tileDataloader):
             tile, coords = data['tile'], data['coordDict']
-            thumbnail = torch.cat([tile, tile, tile], dim = 1 ).cuda(device)
+            '''thumbnail = torch.cat([tile, tile, tile], dim = 1 ).cuda(device)
             bBoxes, blobs = labelExtractorModel(thumbnail)
             blobs = dilation(blobs[0,0].cpu().data.numpy(), 3)
             b = torch.from_numpy(blobs).unsqueeze(0).unsqueeze(0)
-            clean_ = tile*(1-b) + b
-            cleaned[coords['yLow']:coords['yHigh'], coords['xLow']:coords['xHigh']] += tilesSegmenter(clean_.cuda(device))[0,0].cpu().data.numpy()
+            clean_ = tile*(1-b) + b'''
+            cleaned[coords['yLow']:coords['yHigh'], coords['xLow']:coords['xHigh']] += stripesSegmenter(tile.cuda(device))[0,0].cpu().data.numpy()
             
-            for bBox in bBoxes:
+        '''    for bBox in bBoxes:
                 minW = int(min(bBox, key=lambda x : x[0])[0])
                 maxW = int(max(bBox, key=lambda x : x[0])[0])
                 minH = int(min(bBox, key=lambda x : x[1])[1])
@@ -76,11 +85,13 @@ def main():
                 nDetectedLabels +=1
 
         with open(labelSavePath / f'{tilesDataset.mapName}.json', 'w') as outfile:
-            json.dump(labelDict, outfile)
+            json.dump(labelDict, outfile)'''
 
-        colorisedMap = coloriseMap(cleaned)
+        colorisedMap = coloriseMap(cleaned, trees=False)
         unpaddedColorisedMap = colorisedMap[tilesDataset.tilingParameters['paddingY']:tilesDataset.tilingParameters['paddingY']+7590, tilesDataset.tilingParameters['paddingX']:tilesDataset.tilingParameters['paddingX']+11400]
         np.save(f'datasets/coloredMaps/{cityName}/{tilesDataset.mapName}.npy', unpaddedColorisedMap)
+        plt.matshow(unpaddedColorisedMap)
+        plt.show()
 
 
 if __name__=='__main__':

@@ -14,7 +14,7 @@ def erosion(src, dilateSize=1):
                                     (dilateSize, dilateSize))
     return erode(src.astype('uint8'), element)
 
-def coloriseMap(segmentedMap:np.float32) -> np.uint8:
+def coloriseMap(segmentedMap:np.float32, trees=False) -> np.uint8:
     segmentedMap = np.where(segmentedMap>0.5,1,0)
     segmentedMap = erosion(segmentedMap,3)
     contours = findContours(segmentedMap, RETR_TREE, CHAIN_APPROX_SIMPLE)
@@ -23,10 +23,14 @@ def coloriseMap(segmentedMap:np.float32) -> np.uint8:
     colorisedMap = np.ones((np.shape(segmentedMap)[0], np.shape(segmentedMap)[1],3), dtype=np.uint8)*128
     for i, cnt in enumerate(contours):
         area = contourArea(cnt)
-        if 0<area and area < 4000:
+        if trees:
             drawContours(colorisedMap, contours, i, (0,255,0), -1) 
-        elif 4000<area and area < 6000:
-            drawContours(colorisedMap, contours, i, (255,0,0), -1) 
         else:
-            drawContours(colorisedMap, contours, i, (0,0,255), -1) 
+            if area<6000:
+                drawContours(colorisedMap, contours, i, (255,0,0), -1) 
+            elif 6000<area and area < 10000:
+                drawContours(colorisedMap, contours, i, (0,255,0), -1) 
+            else:
+                drawContours(colorisedMap, contours, i, (0,0,255), -1) 
+            
     return colorisedMap

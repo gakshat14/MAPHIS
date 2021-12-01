@@ -24,7 +24,7 @@ def main():
 
     print(f'Classification Type : {args.classifType}')
     if args.classifType.lower() == 'labels':
-        defaultFeatureList = ['False Positive', 'manhole','lamppost', 'stone', 'chimney', 'chy', 'hotel', 
+        defaultFeatureList = ['false positive', 'manhole','lamppost', 'stone', 'chimney', 'chy', 'hotel', 
                             'church', 'workshop', 'firepost', 'river', 'school', 'barrack', 
                             'workhouse', 'market', 'chapel', 'bank', 'pub', 'public house', 
                             'inn', 'bath', 'theatre', 'police', 'wharf', 'yard', 'green', 'park', 'quarry', 'number']
