@@ -7,7 +7,7 @@ import json
 from models import labelExtractor
 import torch
 from city_drawer.models import segmentationModel
-from shapeExtraction import dilation, coloriseMap
+from shapeExtraction import extractShapes
 import matplotlib.pyplot as plt
 
 def main():
@@ -60,7 +60,8 @@ def main():
         tilesDataset = Tiles(Path(args.datasetPath), cityName, mapName=tilePath.stem, fromCoordinates=args.fromCoordinates)
         tileDataloader = DataLoader(tilesDataset, batch_size=args.batchSize, shuffle=True, num_workers=args.workers)
         westBoundary, northBoundary, xDiff, yDiff = tilesDataset.boundaries['westBoundary'], tilesDataset.boundaries['northBoundary'], tilesDataset.boundaries['xDiff'], tilesDataset.boundaries['yDiff']
-        cleaned = np.zeros((tilesDataset.tilingParameters['height'], tilesDataset.tilingParameters['width']))
+        treesOnly = np.zeros((tilesDataset.tilingParameters['height'], tilesDataset.tilingParameters['width']))
+        stripesOnly = np.zeros((tilesDataset.tilingParameters['height'], tilesDataset.tilingParameters['width']))
         labelDict = {'mapName':tilesDataset.mapName, 'labels':{}}
         nDetectedLabels = 0
         for i, data in enumerate(tileDataloader):
@@ -70,7 +71,8 @@ def main():
             blobs = dilation(blobs[0,0].cpu().data.numpy(), 3)
             b = torch.from_numpy(blobs).unsqueeze(0).unsqueeze(0)
             clean_ = tile*(1-b) + b'''
-            cleaned[coords['yLow']:coords['yHigh'], coords['xLow']:coords['xHigh']] += stripesSegmenter(tile.cuda(device))[0,0].cpu().data.numpy()
+            treesOnly[coords['yLow']:coords['yHigh'], coords['xLow']:coords['xHigh']] += treesSegmenter(tile.cuda(device))[0,0].cpu().data.numpy()
+            stripesOnly[coords['yLow']:coords['yHigh'], coords['xLow']:coords['xHigh']] += stripesSegmenter(tile.cuda(device))[0,0].cpu().data.numpy()
             
         '''    for bBox in bBoxes:
                 minW = int(min(bBox, key=lambda x : x[0])[0])
@@ -84,14 +86,10 @@ def main():
                 labelDict['labels'][f'{nDetectedLabels}'] = {'x':x.item(), 'y':y.item(), 'xTile':coords['xLow'].item()+minW, 'yTile':coords['yLow'].item()+minH, 'H':H, 'W':W}
                 nDetectedLabels +=1
 
-        with open(labelSavePath / f'{tilesDataset.mapName}.json', 'w') as outfile:
-            json.dump(labelDict, outfile)'''
-
-        colorisedMap = coloriseMap(cleaned, trees=False)
-        unpaddedColorisedMap = colorisedMap[tilesDataset.tilingParameters['paddingY']:tilesDataset.tilingParameters['paddingY']+7590, tilesDataset.tilingParameters['paddingX']:tilesDataset.tilingParameters['paddingX']+11400]
-        np.save(f'datasets/coloredMaps/{cityName}/{tilesDataset.mapName}.npy', unpaddedColorisedMap)
-        plt.matshow(unpaddedColorisedMap)
-        plt.show()
+        '''
+        savePath = Path(f'datasets/extractedShapes/{cityName}/{tilePath.stem}')
+        savePath.mkdir(parents=True, exist_ok=True)
+        extractShapes(stripesOnly, savePath)
 
 
 if __name__=='__main__':

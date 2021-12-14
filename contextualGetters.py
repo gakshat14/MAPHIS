@@ -23,7 +23,7 @@ def getClassDistributionFromDataframe(dataframe:pd.DataFrame, distribution:np.fl
 def getLabels(dataframe:pd.DataFrame, x:int, y:int, distance:int) -> list:
     allLabels = dataframe.query('xTile-@distance<@x<xTile+@distance and yTile-@distance<@y<yTile+@distance')
     meaningfullLabels = allLabels[allLabels['class'] != 0]['class']
-    getClassDistributionFromDataframe
+    #getClassDistributionFromDataframe
     return meaningfullLabels
 
 classes = openfile(Path(f'{args.datasetPath}/classified{args.classifType}/classes.json'), '.json')
