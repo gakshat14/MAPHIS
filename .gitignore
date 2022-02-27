@@ -1,6 +1,8 @@
 datasets/cities/
 datasets/coloredMaps/
 datasets/syntheticCities/
+datasets/extractedShapes/
+datasets/layers/
 city_drawer/saves/
 city_drawer/segmentedMaps/
 misc.py

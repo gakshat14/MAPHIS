@@ -63,8 +63,8 @@ class syntheticCity(Dataset):
         else:
             low, high = 0, int(self.lenDataset*0.1)
 
-        self.maskTrees   = list(filePath.glob(f'maskTrees*{fileFormat}'))[low:high]
-        self.maskStripes = list(filePath.glob(f'maskStripes*{fileFormat}'))[low:high]
+        self.maskTrees   = list(filePath.glob(f'mask_trees*{fileFormat}'))[low:high]
+        self.maskBuildings = list(filePath.glob(f'mask_buildings*{fileFormat}'))[low:high]
         self.images = list(filePath.glob(f'image*{fileFormat}'))[low:high]
         self.transform= transform
 
@@ -74,9 +74,9 @@ class syntheticCity(Dataset):
     def __getitem__(self, index:int):  
         image = np.load(self.images[index])
         maskTree = np.load(self.maskTrees[index]) 
-        maskStripes = np.load(self.maskStripes[index]) 
+        maskBuilding = np.load(self.maskBuildings[index]) 
         if self.transform:
-            image, maskTree, maskStripes = self.transform(image), self.transform(maskTree), self.transform(maskStripes)
+            image, maskTree, maskStripes = self.transform(image), self.transform(maskTree), self.transform(maskBuilding)
         return image, maskTree, maskStripes
 
 class Maps(Dataset):

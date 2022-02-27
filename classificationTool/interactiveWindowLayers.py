@@ -15,6 +15,7 @@ tolerance = 10
 class Application(ttk.Frame):
     def __init__(self, master:tk.Tk, cityName:str, datasetPath:Path, classifiedFolderPath:Path, tileFileFormat:str):
         super(Application, self).__init__()
+        self.featureName = 'buildings'
         self.cityName = cityName
         self.datasetPath = datasetPath
 
@@ -23,14 +24,14 @@ class Application(ttk.Frame):
         self.allTilesPath = list(self.cityPathMap.glob(f'*{tileFileFormat}'))
         self.allTilesNames = [tilePath.stem for tilePath in self.allTilesPath]
 
-        self.tilingParameters = json.load(open(datasetPath / 'tilingParameters.json'))
+        self.tilingParameters = json.load(open(datasetPath / 'layers/tilingParameters.json'))
         self.paddingX, self.paddingY = self.tilingParameters['paddingX'], self.tilingParameters['paddingY']
 
-        self.cityPathLabel =  Path(f'{datasetPath}/labels/{cityName}')
+        self.cityPathLabel =  Path(f'{datasetPath}/layers/{self.featureName}/{cityName}')
         self.allLabelsToClassifyPath = list(self.cityPathLabel.glob(f'*.json'))
         self.allLabelsToClassifyNames =  [tilePath.stem for tilePath in self.allLabelsToClassifyPath]
 
-        self.classifiedFolderPath = classifiedFolderPath / Path(f'{cityName}')
+        self.classifiedFolderPath = datasetPath / Path(f'classifiedLayers/{cityName}')
         self.classifiedFolderPath.mkdir(parents=True, exist_ok=True)
 
         self.setCurrentlyOpenedFile(self.allLabelsToClassifyNames[0])
@@ -157,8 +158,9 @@ class Application(ttk.Frame):
         textBoxAttribute.delete(0, len(textBoxAttribute.get()))
 
     def fileOpenFunction(self, filePath:Path) -> np.float32:
+        
         if filePath.suffix in ['.png', '.tif', '.jpg']:
-            array = np.asarray(Image.open(filePath), np.uint8)
+            array = np.asarray(Image.open(filePath), np.uint8)[:,:,0]
             return array
         elif filePath.suffix == '.npz':
             return np.load(filePath, np.float32)['arr_0']
@@ -200,9 +202,13 @@ class Application(ttk.Frame):
         self.displayThumbnail()
     
     def changeTile(self):
-        self.setCurrentlyOpenedFile(self.tileNameDisplayed.get())
-        self.loadClassifiedDict()
-        self.displayThumbnail()        
+        print(f"Loading Tile {self.tileNameDisplayed.get()}")
+        try :
+            self.setCurrentlyOpenedFile(self.tileNameDisplayed.get())
+            self.loadClassifiedDict()
+            self.displayThumbnail()        
+        except IndexError:
+            print(f'No {self.featureName} layer corresponding to tile {self.tileNameDisplayed.get()}')
 
     def saveProgress(self):
         print(self.classifiedFolderPath / f'{self.currentTileName}.json')
@@ -220,7 +226,7 @@ class Application(ttk.Frame):
         self.currentTilePath = self.allTilesPath[self.currentIndex]
         self.currentLabelFilePath = self.allLabelsToClassifyPath[self.currentIndex]
         self.currentlyOpenedMap = self.fileOpenFunction(self.currentTilePath)
-        self.currentlyOpenedLabels = json.load(open(self.currentLabelFilePath))['labels']
+        self.currentlyOpenedLabels = json.load(open(self.currentLabelFilePath))[self.featureName]
         self.featureList = openJsonFile(self.classifiedFolderPath.parent / Path(f'classes.json'))
 
     def getCurrentCoordinates(self)->dict:
@@ -233,7 +239,10 @@ class Application(ttk.Frame):
         self.canvaThumbnail.draw()
 
     def loadClassifiedDict(self):
+        #ADD FEATURENAME SPECIFICATION IN SAVEPATH
+        print(f'Loading progress file from {self.classifiedFolderPath}')
         if Path(self.classifiedFolderPath / f'{self.currentTileName}.json').is_file()==False:
+            print(f"No saved progression at in {self.classifiedFolderPath} folder, creating...")
             self.classifiedDict = {}
             writeJsonFile(self.classifiedFolderPath / f'{self.currentTileName}.json', self.classifiedDict)
         else:
@@ -246,9 +255,12 @@ class Application(ttk.Frame):
         else:
             self.progressDict = json.load(open(self.classifiedFolderPath / f'{self.currentTileName}_progress.json'))
 
+
         if len(self.progressDict['Not Classified']) !=0:
+            print(f'Loading element number {self.currentThumbnailIndex}')
             self.currentThumbnailIndex = self.progressDict['Not Classified'][0]
         else:
+            print(f'Reminder : all labels have been classified')
             self.currentThumbnailIndex = self.progressDict['Classified'][0]
 
 def writeJsonFile(filePath, file):

@@ -12,12 +12,12 @@ def matchKeyToName(pathToJsonfile:str, key : str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--classifType', type=str, required=False, default='labels')
-    parser.add_argument('--datasetPath', required=False, type=PurePath, default = here().joinpath('datasets'))
+    parser.add_argument('--classifType', type=str, required=False, default='layers')
+    parser.add_argument('--datasetPath', required=False, type=PurePath, default = r'C:\\Users\\hx21262\\MAPHIS\\datasets')
     parser.add_argument('--cityKey', type=str, required=False, default='36')
     parser.add_argument('--tileFileFormat', type=str, required=False, default='.jpg')
     args = parser.parse_args()
-    
+
     cityName = matchKeyToName(f'{args.datasetPath}/cityKey.json', args.cityKey)
 
     datasetPath = Path(args.datasetPath)
@@ -29,6 +29,13 @@ def main():
                             'workhouse', 'market', 'chapel', 'bank', 'pub', 'public house', 
                             'inn', 'bath', 'theatre', 'police', 'wharf', 'yard', 'green', 'park', 'quarry', 'number']
         from interactiveWindowLabels import Application
+
+    elif args.classifType.lower() == 'layers':
+        defaultFeatureList = ['false positive', 'manhole','lamppost', 'stone', 'chimney', 'chy', 'hotel', 
+                            'church', 'workshop', 'firepost', 'river', 'school', 'barrack', 
+                            'workhouse', 'market', 'chapel', 'bank', 'pub', 'public house', 
+                            'inn', 'bath', 'theatre', 'police', 'wharf', 'yard', 'green', 'park', 'quarry', 'number']
+        from interactiveWindowLayers import Application
 
     elif args.classifType.lower() == 'tiles':
         defaultFeatureList = ['rich residential neighborhood', 'poor residential neighborhood', 'industrial district',

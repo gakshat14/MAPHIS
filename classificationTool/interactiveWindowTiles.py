@@ -96,7 +96,7 @@ class Application(ttk.Frame):
 
     def fileOpenFunction(self, filePath:Path) -> np.float32:
         if filePath.suffix in ['.png', '.tif', '.jpg']:
-            array = np.asarray(Image.open(filePath), np.float32)
+            array = np.asarray(Image.open(filePath).convert('L'), np.uint8)
             paddedArray = np.pad(array, ((self.tilingParameters['paddingX'], self.tilingParameters['paddingX']),(self.tilingParameters['paddingY'], self.tilingParameters['paddingY'])), 'constant', constant_values=255)
             return paddedArray
         elif filePath.suffix == '.npz':

@@ -14,7 +14,7 @@ def main():
 
     cityName = matchKeyToName(f'{args.datasetPath}/cityKey.json', args.cityKey)
     classifiedTilesPaths = list(Path(f'{args.datasetPath}/classified{args.classifType}/{cityName}').glob('*.json'))
-    classes = openfile(Path(f'{args.datasetPath}/classified{args.classifType}/classes.json'), '.json')
+    classes = openfile(Path(f'{args.datasetPath}/classifiedLayers/classes.json'), '.json')
     print(classes)
     def getMapClassificationDistribution(pathToMap:Path) -> np.float32:
         mapDistribution = np.zeros(len(classes), np.float32)

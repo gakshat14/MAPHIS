@@ -24,6 +24,7 @@ def main():
     parser.add_argument('--workers', type=int, help='number of data loading workers', default=2)
     parser.add_argument('--batchSize', type=int, default=1, help='input batch size')
     parser.add_argument('--mapFileExtension', type=str, default='.jpg', required=False)
+    parser.add_argument('--featureName', type=str, default='labels', required=False)
     parser.add_argument('--fromCoordinates', type=bool, default=True, required=False)
 
     args = parser.parse_args()
@@ -31,66 +32,32 @@ def main():
     device = torch.device('cuda:0')
     labelExtractorModel = labelExtractor(args.savedPathDetection, args.savedPathRefiner, device, args.textThreshold, args.linkThreshold, args.lowText)
 
-    treesSegmenterParameters = json.load(open(f'city_drawer/saves/treesSegmentModelParameters.json'))
-    treesSegmenter = segmentationModel(treesSegmenterParameters)
-    if Path(f'city_drawer/saves/treesSegmentModelStateDict.pth').is_file():
-        treesSegmenter.load_state_dict(torch.load(f'city_drawer/saves/treesSegmentModelStateDict.pth'))
-    else:
-        raise FileNotFoundError ("There is no trained model")
-    treesSegmenter.cuda(device)
-    treesSegmenter.eval()
-
-    stripesSegmenterParameters = json.load(open(f'city_drawer/saves/stripesSegmentModelParameters.json'))
-    stripesSegmenter = segmentationModel(stripesSegmenterParameters)
-    if Path(f'city_drawer/saves/stripesSegmentModelStateDict.pth').is_file():
-        stripesSegmenter.load_state_dict(torch.load(f'city_drawer/saves/stripesSegmentModelStateDict.pth'))
-    else:
-        raise FileNotFoundError ("There is no trained model")
-    stripesSegmenter.cuda(device)
-    stripesSegmenter.eval()
-
     cityName = matchKeyToName(f'{args.datasetPath}/cityKey.json', args.cityKey)
-    allTilesPaths = list(Path(f'{args.datasetPath}/cities/{cityName}').glob(f'*/*/0105033010241{args.mapFileExtension}'))
-    
-    labelSavePath = Path(f'datasets/labels/{cityName}')
-    labelSavePath.mkdir(parents=True, exist_ok=True)
+    allTilesPaths = list(Path(f'{args.datasetPath}/cities/{cityName}').glob(f'*/*/*{args.mapFileExtension}'))[1:]
 
-    for tilePath in allTilesPaths:
-        print(f'Processing Tile {tilePath.stem}')
-        tilesDataset = Tiles(Path(args.datasetPath), cityName, mapName=tilePath.stem, fromCoordinates=args.fromCoordinates)
-        tileDataloader = DataLoader(tilesDataset, batch_size=args.batchSize, shuffle=True, num_workers=args.workers)
-        westBoundary, northBoundary, xDiff, yDiff = tilesDataset.boundaries['westBoundary'], tilesDataset.boundaries['northBoundary'], tilesDataset.boundaries['xDiff'], tilesDataset.boundaries['yDiff']
-        treesOnly = np.zeros((tilesDataset.tilingParameters['height'], tilesDataset.tilingParameters['width']))
-        stripesOnly = np.zeros((tilesDataset.tilingParameters['height'], tilesDataset.tilingParameters['width']))
-        labelDict = {'mapName':tilesDataset.mapName, 'labels':{}}
-        nDetectedLabels = 0
-        for i, data in enumerate(tileDataloader):
-            tile, coords = data['tile'], data['coordDict']
-            '''thumbnail = torch.cat([tile, tile, tile], dim = 1 ).cuda(device)
-            bBoxes, blobs = labelExtractorModel(thumbnail)
-            blobs = dilation(blobs[0,0].cpu().data.numpy(), 3)
-            b = torch.from_numpy(blobs).unsqueeze(0).unsqueeze(0)
-            clean_ = tile*(1-b) + b'''
-            treesOnly[coords['yLow']:coords['yHigh'], coords['xLow']:coords['xHigh']] += treesSegmenter(tile.cuda(device))[0,0].cpu().data.numpy()
-            stripesOnly[coords['yLow']:coords['yHigh'], coords['xLow']:coords['xHigh']] += stripesSegmenter(tile.cuda(device))[0,0].cpu().data.numpy()
-            
-        '''    for bBox in bBoxes:
-                minW = int(min(bBox, key=lambda x : x[0])[0])
-                maxW = int(max(bBox, key=lambda x : x[0])[0])
-                minH = int(min(bBox, key=lambda x : x[1])[1])
-                maxH = int(max(bBox, key=lambda x : x[1])[1])
-                W = maxW - minW
-                H = maxH - minH
-                x = westBoundary +(minW + coords['xLow'])*xDiff
-                y = northBoundary+(minH + coords['yLow'])*yDiff
-                labelDict['labels'][f'{nDetectedLabels}'] = {'x':x.item(), 'y':y.item(), 'xTile':coords['xLow'].item()+minW, 'yTile':coords['yLow'].item()+minH, 'H':H, 'W':W}
-                nDetectedLabels +=1
+    for featureName in ['trees']:
+        modelSegmentParameters= json.load(open(f'city_drawer/saves/{featureName}SegmentModelParameters.json'))
+        modelSegment = segmentationModel(modelSegmentParameters)
+        if Path(f'city_drawer/saves/{featureName}SegmentModelStateDict.pth').is_file():
+            print('loading statedict')
+            modelSegment.load_state_dict(torch.load(f'city_drawer/saves/{featureName}SegmentModelStateDict.pth'))
+        modelSegment.cuda(device)
+        modelSegment.eval()
 
-        '''
-        savePath = Path(f'datasets/extractedShapes/{cityName}/{tilePath.stem}')
-        savePath.mkdir(parents=True, exist_ok=True)
-        extractShapes(stripesOnly, savePath)
+        for tilePath in allTilesPaths:
+            print(f'Processing Tile {tilePath.stem}')
+            tilesDataset = Tiles(Path(args.datasetPath), cityName, mapName=tilePath.stem, fromCoordinates=args.fromCoordinates)
+            tileDataloader = DataLoader(tilesDataset, batch_size=args.batchSize, shuffle=True, num_workers=args.workers)
+            segmented = np.zeros((tilesDataset.tilingParameters['height'], tilesDataset.tilingParameters['width']))
+            for i, data in enumerate(tileDataloader):
+                tile, coords = data['tile'], data['coordDict']
+                out = modelSegment(tile.float().cuda(device))
+                segmented[coords['yLow']:coords['yHigh'], coords['xLow']:coords['xHigh']] += out[0,0].cpu().data.numpy()
 
+            segmented = np.where(segmented>0.8,1,0)
+            plt.matshow(segmented)
+            plt.show()            
+            np.save(f'datasets/layers/{featureName}/{cityName}/{tilePath.stem}_segmented.npy', np.uint8(segmented))
 
 if __name__=='__main__':
     main()

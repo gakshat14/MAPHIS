@@ -16,6 +16,17 @@ import json
 from PIL.TiffTags import TAGS
 from torch.nn.functional import one_hot
 
+def dilation(src:np.float32, dilateSize=1):
+    element = cv2.getStructuringElement(cv2.MORPH_RECT, (2 * dilateSize + 1, 2 * dilateSize + 1),
+                                    (dilateSize, dilateSize))
+    return cv2.dilate(src.astype('uint8'), element)
+
+def erosion(src, dilateSize=1):
+    element = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilateSize + 1, 2 * dilateSize + 1),
+                                    (dilateSize, dilateSize))
+    return cv2.erode(src.astype('uint8'), element)
+
+
 def csv_from_excel(fileName):
     pd.read_excel('./'+fileName).to_csv('./'+fileName[:fileName.index('.')]+'.csv', index=False)
     
@@ -116,12 +127,16 @@ class Tiles(Dataset):
             self.classifiedPath = json.load(open(datasetPath / f'classifiedMaps/{cityName}/{mapName}.json'))
             self.cityfolderPath = next(datasetPath.glob(f'coloredMaps/{cityName}') )
             if fromCoordinates:
-                self.fullMap = ToTensor()(openfile(self.cityfolderPath / f'{self.mapName}{self.mapfileFormat}', self.mapfileFormat))
+                im = openfile(self.cityfolderPath / f'{self.mapName}{self.mapfileFormat}', self.mapfileFormat)
+                dilated = dilation(im)
+                eroded = erosion(im)
+                self.fullMap = ToTensor()(np.concatenate((im, dilated, eroded),1))
         else:
             self.cityfolderPath = next(datasetPath.glob(f'cities/{cityName}/*/*') )
             if fromCoordinates:
                 self.paddingMap = nn.ConstantPad2d((self.tilingParameters['paddingX'],self.tilingParameters['paddingX'], self.tilingParameters['paddingY'],self.tilingParameters['paddingY']),1)
-                self.fullMap = self.paddingMap(ToTensor()(openfile(self.cityfolderPath / f'{self.mapName}{self.mapfileFormat}', self.mapfileFormat)))
+                im = openfile(self.cityfolderPath / f'{self.mapName}{self.mapfileFormat}', self.mapfileFormat)
+                self.fullMap = self.paddingMap(ToTensor()(im))
     
     def __len__(self):
         return len(self.tilesCoordinates)        
@@ -181,7 +196,7 @@ def openfile(filePath, fileExtension):
     if fileExtension =='.npy':
         return np.load(filePath)
     elif fileExtension =='.jpg':
-        return Image.open(filePath)
+        return normalise(np.array(Image.open(filePath).convert('L')))
     elif fileExtension =='.json':
         return json.load(open(filePath))
     else:
@@ -198,6 +213,9 @@ def getTiffProperties(tiffImage, showDict = False, returnDict=False):
             print(' %s : %s' % (key, value))
     if returnDict:
         return meta_dict
+
+def normalise(x:np.float32):
+    return (x-x.min()) / (x.max()-x.min())
 
 def extractMetaData(tfwRaw) ->dict:
     xDiff = float(tfwRaw.split("\n")[0])

@@ -32,17 +32,7 @@ MARGIN  = 5
 SPACING = 7
 NLINESMAX = 8
 
-smallSizes = [1,2,4,8,16]
 
-def dilation(src:np.float32, dilateSize=1):
-    element = cv2.getStructuringElement(cv2.MORPH_RECT, (2 * dilateSize + 1, 2 * dilateSize + 1),
-                                    (dilateSize, dilateSize))
-    return cv2.dilate(src.astype('uint8'), element)
-
-def erosion(src, dilateSize=1):
-    element = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilateSize + 1, 2 * dilateSize + 1),
-                                    (dilateSize, dilateSize))
-    return cv2.erode(src.astype('uint8'), element)
 
 def crop(mat:float, MARGIN:int, sizeImg:int, center=True) -> float :
     if center:
@@ -92,7 +82,7 @@ def generateThickShape(maxRotatedLength:int) -> Tuple[np.float32, np.float32]:
     if shapeVar == 'rectangle':
         shapeLength = random.randint(int((maxRotatedLength-1)*0.5), maxRotatedLength-1)
         pattern = generateStripePattern(shapeLength)
-        mask = np.ones((shapeLength,shapeLength),np.float32)
+        mask = np.ones((shapeLength,shapeLength))
         mask[0:MARGIN,:] = 0
         mask[shapeLength-MARGIN:,:] = 0
         mask[:,0:MARGIN] = 0
@@ -100,7 +90,7 @@ def generateThickShape(maxRotatedLength:int) -> Tuple[np.float32, np.float32]:
         image = mask*pattern
     else:
         pattern = generateStripePattern(maxRotatedLength)
-        mask = np.zeros((maxRotatedLength,maxRotatedLength), np.float32)
+        mask = np.zeros((maxRotatedLength,maxRotatedLength))
         maskBackground = np.ones((maxRotatedLength,maxRotatedLength))
         rr, cc = disk((int(maxRotatedLength/2), int(maxRotatedLength/2)), math.ceil(maxRotatedLength/2))
         maskBackground[rr,cc] = 0
@@ -112,46 +102,54 @@ def generateThickShape(maxRotatedLength:int) -> Tuple[np.float32, np.float32]:
     rotatedMaskSegment = ndimage.rotate(mask, rotationAngle, reshape=True, mode='constant', cval=0)
     return rotatedImage, rotatedMaskSegment
 
-def generateFeature(patternDF:pd.DataFrame, background, tbSizeVar) -> Tuple[np.float32, np.float32]:    
+def generateFeature(patternDF:pd.DataFrame, background, tbSizeVar) -> Tuple[np.float32, np.float32]:
+    
     choice = random.choice(FEATURENAMES)
+
     while  patternDF[choice][f'{tbSizeVar}'].empty:
-        choice = random.choice(FEATURENAMES)            
+        tbSizeVar = int(tbSizeVar/2)
+        print(tbSizeVar)
+            
     element = patternDF[choice][f'{tbSizeVar}'].sample(n=1).iloc[0]    
-    mask = np.zeros((element['H'], element['W']), np.float32)
-    bkg = np.ones((element['H'], element['W']), np.float32)
+
+    mask = np.zeros((element['H'], element['W']), np.uint8)
+    bkg = np.ones((element['H'], element['W']), np.uint8)
+
     cv2.drawContours(mask,[np.load(here() / element['savePath'])], 0, 1, -1, offset = ( -element['xTile'], -element['yTile']))
     cv2.drawContours(bkg,[np.load(here() / element['savePath'])], 0, 0, -1, offset = ( -element['xTile'], -element['yTile']))
+
     toDraw = mask*background[element['yTile']:element['yTile']+element['H'], element['xTile']:element['xTile']+element['W']] + bkg
+
     rotationAngle = random.randint(0,180)
     rotatedImage = ndimage.rotate(toDraw, rotationAngle, reshape=True, mode='constant', cval=1)
     rotatedMask = ndimage.rotate(mask, rotationAngle, reshape=True, mode='constant', cval=0)
-    #rotatedImage = toDraw
-    #rotatedMask = mask
     return rotatedImage, rotatedMask, choice
 
 def fillThumbnail(thumbnailSize:int, pattern:np.float32, mask:np.float32, boundRowLow:int, boundRowHigh:int, boundColLow:int, boundColHigh:int, imageToFill:np.float32, maskToFill:np.float32)-> Tuple[np.float32, np.float32]:
-    thumbnail = np.ones((thumbnailSize,thumbnailSize), np.float32)
-    maskToReturn =  np.zeros((thumbnailSize,thumbnailSize), np.float32)
-    posX = random.randint(0, thumbnailSize-np.shape(pattern)[0])
-    posY = random.randint(0, thumbnailSize-np.shape(pattern)[1])
-    thumbnail[posX:posX+np.shape(pattern)[0], posY:posY+np.shape(pattern)[1]] *= pattern
-    maskToReturn[posX:posX+np.shape(mask)[0], posY:posY+np.shape(mask)[1]] += mask
-    imageToFill[boundRowLow:boundRowHigh, boundColLow:boundColHigh] *= thumbnail
-    maskToFill[boundRowLow:boundRowHigh, boundColLow:boundColHigh] += maskToReturn
+    try:
+        thumbnail = np.ones((thumbnailSize,thumbnailSize))
+        maskToReturn =  np.zeros((thumbnailSize,thumbnailSize))
+        posX = random.randint(0, thumbnailSize-np.shape(pattern)[0])
+        posY = random.randint(0, thumbnailSize-np.shape(pattern)[1])
+        thumbnail[posX:posX+np.shape(pattern)[0], posY:posY+np.shape(pattern)[1]] *= pattern
+        maskToReturn[posX:posX+np.shape(mask)[0], posY:posY+np.shape(mask)[1]] += mask
+        imageToFill[boundRowLow:boundRowHigh, boundColLow:boundColHigh] *= thumbnail
+        maskToFill[boundRowLow:boundRowHigh, boundColLow:boundColHigh] += maskToReturn
+    except ValueError:
+        pass
+        #plt.matshow(pattern)
+        #plt.show()
     return imageToFill, maskToFill
 
-def generateFeatureOrStripe(tbSizeVar:int, patternsDict:dict, boundRowLow:int, boundRowHigh:int, boundColLow:int, boundColHigh:int, image:np.float32, masksDict:dict, pReal=0.8, background=None)-> Tuple[np.float32, np.float32, np.float32]:
-    patternVar = random.choices([0,1], [pReal,1-pReal])[0]
+def generateFeatureOrStripe(tbSizeVar:int, patternsDict:dict, boundRowLow:int, boundRowHigh:int, boundColLow:int, boundColHigh:int, image:np.float32, maskTrees:np.float32, maskStripes:np.float32, pTree=1, background=None)-> Tuple[np.float32, np.float32, np.float32]:
+    patternVar = random.choices([0,1], [pTree,1-pTree])[0]
     if patternVar ==0:
         pattern, mask, choice = generateFeature(patternsDict, background, tbSizeVar)
-
+        image, maskTrees = fillThumbnail(tbSizeVar, pattern, mask, boundRowLow, boundRowHigh,boundColLow, boundColHigh, image, maskTrees)
     else:
-        choice = 'buildings'
         pattern, mask = generateThickShape(int(tbSizeVar/math.sqrt(2)))
-
-    image, mask = fillThumbnail(tbSizeVar, pattern, mask, boundRowLow, boundRowHigh,boundColLow, boundColHigh, image, masksDict[choice])
-    masksDict[choice] = mask
-    return image, masksDict
+        image, maskStripes = fillThumbnail(tbSizeVar, pattern, mask, boundRowLow, boundRowHigh,boundColLow, boundColHigh, image, maskStripes)
+    return image, maskTrees, maskStripes
 
 def generateBlockOfFlats(sizeImg:int) -> Tuple[np.float32, np.float32, np.float32]:
     MARGIN = 3
@@ -172,20 +170,58 @@ def generateBlockOfFlats(sizeImg:int) -> Tuple[np.float32, np.float32, np.float3
     cropMargin = int((enclosingSquareLength-sizeImg)/2)
     return crop(rotatedImage+rotatedBand, cropMargin, sizeImg), crop(rotatedMask, cropMargin, sizeImg), crop(rotatedBand, cropMargin, sizeImg)
 
-def is_cell_available(grid, indexRow, indexCol):
-    return not bool(grid[indexRow, indexCol])
+def generateFeaturesAndMask(patternsDict:dict, sizeImg=512, background=None)-> Tuple[np.float32, np.float32, np.float32]:
+    image = np.ones((sizeImg,sizeImg), np.float32)
+    maskTrees = np.zeros((sizeImg,sizeImg), np.float32)
+    maskStripes = np.zeros((sizeImg,sizeImg), np.float32)
+    
+    tbSizeVar = random.choices([256,sizeImg], [PSMALL+PMEDIUM+PLARGE, PHUGE])[0]
+    if tbSizeVar == sizeImg:   
+        image, maskTrees, maskStripes  = generateFeatureOrStripe(tbSizeVar, patternsDict, 0, 512 ,0, 512, image, maskTrees, maskStripes, background=background)  
+    else:        
+        for indexRow256 in range(2):
+            for indexCol256 in range(2):
+                boundRowLow  = indexRow256 * 256
+                boundRowHigh = boundRowLow + 256
+                boundColLow  = indexCol256 * 256
+                boundColHigh = boundColLow + 256
+                tbSizeVar = random.choices([128,256], [PSMALL+PMEDIUM, PLARGE])[0]
+                if tbSizeVar == 256:   
+                    image, maskTrees, maskStripes  = generateFeatureOrStripe(tbSizeVar, patternsDict, boundRowLow, boundRowHigh,boundColLow, boundColHigh, image, maskTrees, maskStripes, background=background)  
 
-def try_square_size(grid, indexRow, indexCol, n):
-    smSizes = smallSizes.copy()
-    while True:
-        potentialSize = random.choice(smSizes)
-        if indexRow + potentialSize <= n and indexCol + potentialSize <= n:
-            if np.count_nonzero(grid[indexRow:indexRow+potentialSize, indexCol:indexCol+potentialSize])==0:
-                return potentialSize
-        else:
-            smSizes.remove(potentialSize)
+                else:
+                    for indexRow128 in range(2):
+                        for indexCol128 in range(2):
+                            boundRowLow  = indexRow256 * 256 + indexRow128 * 128
+                            boundRowHigh = boundRowLow + 128
+                            boundColLow  = indexCol256 *256 + indexCol128 *128
+                            boundColHigh = boundColLow + 128
+                            tbSizeVar = random.choices([64,128], [PSMALL+PLARGE, PMEDIUM+PLARGE])[0]
+                            if tbSizeVar == 128:
+                                image, maskTrees, maskStripes  = generateFeatureOrStripe(tbSizeVar, patternsDict, boundRowLow, boundRowHigh,boundColLow, boundColHigh, image, maskTrees, maskStripes, background=background)  
+                                
+                            else:
+                                for indexRow64 in range(2):
+                                    for indexCol64 in range(2):
+                                        boundRowLow  = indexRow256 * 256 + indexRow128 * 128 + indexRow64 * 64
+                                        boundRowHigh = boundRowLow + 64
+                                        boundColLow  = indexCol256 *256 + indexCol128 *128 + indexCol64 *64
+                                        boundColHigh = boundColLow + 64
+                                        image, maskTrees, maskStripes = generateFeatureOrStripe(tbSizeVar, patternsDict, boundRowLow, boundRowHigh,boundColLow, boundColHigh, image, maskTrees, maskStripes, background=background)           
+        
+        blockOfFlats = random.choices([0,1], [0.1,0.9])[0]
+        if blockOfFlats == 0:
+            imageBloc, maskBloc , band  = generateBlockOfFlats(sizeImg)
+            image = image*band + imageBloc* (1-band)
+            maskStripes  = maskStripes*band + maskBloc
+            maskTrees  = maskTrees*band    
+            '''imageBloc, maskTrees, maskBloc  = generateFeatureOrStripe(sizeImg, patternsDict, 0, sizeImg,0, sizeImg, np.ones((sizeImg,sizeImg)), maskTrees, np.zeros((sizeImg,sizeImg)), pTree=0) 
+            rim = (imageBloc*(maskBloc-1)+(1-maskBloc))
+            image = image * (1- maskBloc) + maskBloc*imageBloc - rim
+            maskStripes = ( maskStripes * (1-maskBloc) + maskBloc) * (1-rim)
+            maskTrees *= 1-maskBloc'''
 
-def addLines(image:np.float32, sizeImg=512):
+
     lines = np.ones((sizeImg,sizeImg), dtype=np.float32)
     for i in range(random.randint(0,NLINESMAX)):
         if random.randint(0,1) == 0:
@@ -198,58 +234,20 @@ def addLines(image:np.float32, sizeImg=512):
         lines[rr, cc] = 0
 
     _, image = cv2.threshold(image, 0.2, 1, cv2.THRESH_BINARY)
-    return lines*image
-
-def generateFeaturesAndMask(patternsDict:dict, sizeImg=512, background=None, minSize = 32)-> Tuple[np.float32, np.float32, np.float32]:
-    image = np.ones((sizeImg,sizeImg), np.float32)
-    # CHECK MASKS TO ENSURE THE MEMORY IS NOT SHARED WHEN ALLOCATING
-    masksDict = {featureName:np.zeros((sizeImg,sizeImg), np.float32) for featureName in  patternsDict.keys()}
-    gridStep = int(sizeImg/minSize)
-    grid = np.zeros((gridStep,gridStep), np.float32)
-    for indexRow in range(gridStep):
-        for indexCol in range(gridStep):
-            if is_cell_available(grid, indexRow, indexCol):
-                blockSize = try_square_size(grid, indexRow, indexCol, gridStep)
-                if blockSize ==smallSizes[-1]:
-                    blockOfFlats = random.choices([0,1], [0.5,0.5])[0]
-                    if blockOfFlats == 0:
-                        imageBloc, maskBloc , band  = generateBlockOfFlats(sizeImg)
-                        image = image*band + imageBloc* (1-band)
-                        masksDict['buildings']  = masksDict['buildings']*band + maskBloc
-                        masksDict['trees'] = masksDict['trees']*band   
-                        masksDict['labels'] = masksDict['labels']*band   
-                        image = addLines(image)
-        
-                        return image, masksDict
-               
-                image, masksDict  = generateFeatureOrStripe(blockSize*minSize, patternsDict, indexRow*minSize, (indexRow+blockSize)*minSize , indexCol*minSize, (indexCol+blockSize)*minSize, image, masksDict, background=background)
-                grid[indexRow:indexRow+blockSize, indexCol:indexCol+blockSize] = 1
-
-            else:
-                pass
-    image = addLines(image)
-        
-    return image, masksDict
-
-def makeBatch(batchSize, patternsDict, background):
-    batch = np.zeros((batchSize, 1, 512, 512))
-    batchMasks = {featureName:np.zeros((batchSize, 1, 512, 512)) for featureName in  patternsDict.keys()}
-    for index in range(batchSize):
-        image, masksDict = generateFeaturesAndMask(patternsDict, background=background)
-        batch[index,0] = image
-        for key, value in batchMasks.items():
-            value[index,0] = masksDict[key]
-    return batch, batchMasks
-
-def genMap(savePath, patternsDict, background):
+    return lines*image, maskTrees, maskStripes
+ 
+def genMap(savePath, patternsDict):
     global q
     Path(f'{savePath}').mkdir(parents=True ,exist_ok=True)
     while True:
         counter = q.get()
-        image, masksDict = generateFeaturesAndMask(patternsDict, background=background)
+
+        image, maskTrees, maskStripes = generateFeaturesAndMask(patternsDict)
+        
         np.save(f'{savePath}/image_{counter}', image)
-        for key, value in masksDict.items():
-            np.save(f'{savePath}/mask_{key}_{counter}.npy', value)
+        np.save(f'{savePath}/maskTrees_{counter}', maskTrees)
+        np.save(f'{savePath}/maskStripes_{counter}', maskStripes)
+            
         q.task_done()
         
 def main(args):
@@ -258,32 +256,37 @@ def main(args):
     
     sizes = [32,64,128,256,512]
     
-    background = np.where(np.array(Image.open( here() / f'datasets/cities/{cityName}/500/tp_1/{mapName}.jpg').convert('L'), np.float32) <100, 0, 1)
+    background = np.where(np.array(Image.open( here() / f'datasets/cities/{cityName}/500/tp_1/{mapName}.jpg').convert('L'), np.uint8) <100, 0, 1)
     patternsDict = {}
     sq2 = math.sqrt(2)
     for featureName in FEATURENAMES:
         patternsDict[featureName] = {}
         fullDf = pd.DataFrame(json.load(open(here() / f'datasets/layers/{featureName}/Luton/0105033010241.json'))[f'{featureName}']).transpose() 
         for size in sizes:
-            sLow = size/2
-            sHigh = size/sq2
-            df1 = fullDf.query('@sLow<H<@sHigh & W<H ')
-            df2 = fullDf.query('@sLow<W<@sHigh & H<W ')
-            patternsDict[featureName][f'{size}'] = df1.append(df2)
+            boundAreaLow  = int(2*pow(size/2,2))
+            boundAreaHigh = int(2*pow(size,2))
+            patternsDict[featureName][f'{size}'] = fullDf.query('@boundAreaLow<area<@boundAreaHigh')
+    
+    for size in sizes:
+        print(patternsDict['labels'][f'{size}'].size)
+
+    print(pd.DataFrame(json.load(open(here() / f'datasets/layers/{featureName}/Luton/0105033010241.json'))[f'{featureName}']).transpose().size)
 
     if args.treatment == "show":    
         counter = len(glob.glob(f'{args.savePath}/image*'))
         for i in range(args.nSamples):
-            image, masksDict = generateFeaturesAndMask(patternsDict, background=background, sizeImg=512)
+            image, maskTrees, maskStripes = generateFeaturesAndMask(patternsDict, background=background, sizeImg=512)
+            #image, maskTrees, maskStripes, maskLabels = generateFeaturesAndMask(patternsDict)
             plt.matshow(image)
             plt.show()
-            
+            plt.matshow(maskStripes + maskTrees)
+            plt.show()    
             
     elif args.treatment == "save":
         for i in range(args.nSamples):
             q.put(i)
         for t in range(args.maxThreads):
-            worker = Thread(target = genMap, args = (args.savePath, patternsDict, background))
+            worker = Thread(target = genMap, args = (args.savePath, patternsDict))
             worker.daemon = True
             worker.start()
         q.join()
@@ -294,7 +297,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Tree Generation')
     parser.add_argument('--datasetPath', required=False, type=PurePath, default = here().joinpath('datasets/patterns'))
-    parser.add_argument('--nSamples', required=False, type=int, default = 100)
+    parser.add_argument('--nSamples', required=False, type=int, default = 6000)
     parser.add_argument('--savePath', required=False, type=PurePath, default = here().joinpath('datasets/syntheticCities'))
     parser.add_argument('--imageSize', required=False, type=int, default = 512)
     parser.add_argument('--treatment', required=False, type=str, default='show')

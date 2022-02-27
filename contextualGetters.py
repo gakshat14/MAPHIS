@@ -26,12 +26,12 @@ def getLabels(dataframe:pd.DataFrame, x:int, y:int, distance:int) -> list:
     #getClassDistributionFromDataframe
     return meaningfullLabels
 
-classes = openfile(Path(f'{args.datasetPath}/classified{args.classifType}/classes.json'), '.json')
-dataframe = pd.read_json(here().joinpath('datasets/classifiedLabels/Luton/0105033010241.json'))
+classes = openfile(Path(f'{args.datasetPath}/classifiedLayers/classes.json'), '.json')
+dataframe = pd.read_json(here().joinpath('datasets/classifiedLayers/Luton/0105033010241.json'))
 
 fig, axs = plt.subplots(1, 1, tight_layout=True)
 
 # We can set the number of bins with the *bins* keyword argument.
-axs.hist(getLabels(dataframe.transpose(), 7290, 4696, 4000), bins=len(classes))
+axs.hist(getLabels(dataframe.transpose(), 7290, 4696, 500), bins=len(classes))
 
 plt.show()
