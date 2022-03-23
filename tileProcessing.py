@@ -5,6 +5,7 @@ import numpy as np
 from pathlib import Path
 import json
 from models import labelExtractor
+import pathlib
 import torch
 from city_drawer.models import segmentationModel
 from shapeExtraction import extractShapes
@@ -30,12 +31,12 @@ def main():
     args = parser.parse_args()
 
     device = torch.device('cuda:0')
-    labelExtractorModel = labelExtractor(args.savedPathDetection, args.savedPathRefiner, device, args.textThreshold, args.linkThreshold, args.lowText)
 
-    cityName = matchKeyToName(f'{args.datasetPath}/cityKey.json', args.cityKey)
-    allTilesPaths = list(Path(f'{args.datasetPath}/cities/{cityName}').glob(f'*/*/*{args.mapFileExtension}'))[1:]
+    cityName = matchKeyToName(pathlib.Path(f'{args.datasetPath}/cityKey.json'), args.cityKey)
+    allTilesPaths = list(Path(f'{args.datasetPath}/cities/{cityName}').glob(f'*/*/*{args.mapFileExtension}'))[1:2]
 
-    for featureName in ['trees']:
+    #for featureName in ['trees', 'labels', 'buildings']:
+    for featureName in ['buildings']:
         modelSegmentParameters= json.load(open(f'city_drawer/saves/{featureName}SegmentModelParameters.json'))
         modelSegment = segmentationModel(modelSegmentParameters)
         if Path(f'city_drawer/saves/{featureName}SegmentModelStateDict.pth').is_file():
@@ -54,9 +55,9 @@ def main():
                 out = modelSegment(tile.float().cuda(device))
                 segmented[coords['yLow']:coords['yHigh'], coords['xLow']:coords['xHigh']] += out[0,0].cpu().data.numpy()
 
-            segmented = np.where(segmented>0.8,1,0)
+            segmented = np.where(segmented>0.9,1,0)       
             plt.matshow(segmented)
-            plt.show()            
+            plt.show()
             np.save(f'datasets/layers/{featureName}/{cityName}/{tilePath.stem}_segmented.npy', np.uint8(segmented))
 
 if __name__=='__main__':

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 from os import read
-from pathlib import Path
+import pathlib
 from torch.utils.data import Dataset
 import glob
 from PIL import Image
@@ -64,7 +64,7 @@ class syntheticCity(Dataset):
         return image[:,i:i+256,j:j+256], maskTree[:,i:i+256,j:j+256], maskStripes[:,i:i+256,j:j+256]
 
 class Maps(Dataset):
-    def __init__(self, datasetPath:Path, cityName:str, fileFormat='.jpg', transform=None):
+    def __init__(self, datasetPath:pathlib.Path, cityName:str, fileFormat='.jpg', transform=None):
         self.mapsPath   = list(datasetPath.glob(f'cities/{cityName}/*/*/*{fileFormat}'))
         if fileFormat == '.jpg': 
             self.height = 7590
@@ -109,8 +109,53 @@ class Maps(Dataset):
     def __len__(self): 
         return len(self.mapsPath)
             
+class Thumbnails(Dataset):
+    def __init__(self, datasetPath:pathlib.Path, cityName:str,  tileName='0105033050201', transform=None, tileFileFormat='.jpg', featureName='trees') -> None:
+        self.tilingParameters = json.load(open(datasetPath / 'tilingParameters.json'))
+        self.tilesCoordinates = self.tilingParameters['coordinates']
+        self.cityName = cityName
+        self.mapName  = tileName
+        self.featureName = featureName
+        self.tileFileFormat = tileFileFormat
+        self.cityfolderPath = next(datasetPath.glob(f'cities/{cityName}/*/*') )
+
+        self.paddingMapBackground = nn.ConstantPad2d((self.tilingParameters['paddingX'],self.tilingParameters['paddingX'], self.tilingParameters['paddingY'],self.tilingParameters['paddingY']),1)
+        self.paddingMapMask = nn.ConstantPad2d((self.tilingParameters['paddingX'],self.tilingParameters['paddingX'], self.tilingParameters['paddingY'],self.tilingParameters['paddingY']),0)
+        background = openfile(self.cityfolderPath / f'{self.mapName}.jpg')
+        self.paddedBackground = np.where(self.paddingMapBackground(ToTensor()(background))!=0,1,0)
+
+        trees_mask = openfile(datasetPath / f'layers/trees/{cityName}/{self.mapName}_mask.npy')
+        self.padded_trees_mask = torch.where(self.paddingMapMask(ToTensor()(trees_mask))!=0,1,0)
+
+        buildings_mask = openfile(datasetPath / f'layers/buildings/{cityName}/{self.mapName}_mask.npy')
+        self.padded_buildings_mask = torch.where(self.paddingMapMask(ToTensor()(buildings_mask))!=0,1,0)
+
+        labels_mask = openfile(datasetPath / f'layers/labels/{cityName}/{self.mapName}_mask.npy')
+        self.padded_labels_mask = torch.where(self.paddingMapMask(ToTensor()(labels_mask))!=0,1,0)
+
+    def __len__(self):
+        return len(self.tilesCoordinates)        
+
+    def __getitem__(self, index):
+        coordDict = self.tilesCoordinates[f'{index}']
+        sample = {'coordDict': coordDict}
+        sample['background'] = self.paddedBackground[:,coordDict['yLow']:coordDict['yHigh'], coordDict['xLow']:coordDict['xHigh']]
+        if self.featureName =='labels':
+            sample['mask'] = self.padded_labels_mask[:,coordDict['yLow']:coordDict['yHigh'], coordDict['xLow']:coordDict['xHigh']] 
+            sample['overlap_mask'] = torch.clamp(self.padded_trees_mask[:,coordDict['yLow']:coordDict['yHigh'], coordDict['xLow']:coordDict['xHigh']]+self.padded_buildings_mask[:,coordDict['yLow']:coordDict['yHigh'], coordDict['xLow']:coordDict['xHigh']], 0 , 1)
+        elif self.featureName =='trees':
+            sample['mask'] = self.padded_trees_mask[:,coordDict['yLow']:coordDict['yHigh'], coordDict['xLow']:coordDict['xHigh']] 
+            sample['overlap_mask'] = torch.clamp(self.padded_labels_mask[:,coordDict['yLow']:coordDict['yHigh'], coordDict['xLow']:coordDict['xHigh']]+self.padded_buildings_mask[:,coordDict['yLow']:coordDict['yHigh'], coordDict['xLow']:coordDict['xHigh']], 0 , 1)
+        elif self.featureName =='buildings':
+            sample['mask'] = self.padded_buildings_mask[:,coordDict['yLow']:coordDict['yHigh'], coordDict['xLow']:coordDict['xHigh']] 
+            sample['overlap_mask'] = torch.clamp(self.padded_trees_mask[:,coordDict['yLow']:coordDict['yHigh'], coordDict['xLow']:coordDict['xHigh']]+self.padded_labels_mask[:,coordDict['yLow']:coordDict['yHigh'], coordDict['xLow']:coordDict['xHigh']], 0 , 1)
+        else:
+            raise ValueError ('Wrong featureName')
+        return sample
+
+
 class Tiles(Dataset):
-    def __init__(self, datasetPath:Path, cityName:str, mapName='0105033050201', transform=None, fromCoordinates=False, mapfileFormat='.jpg', thumbnailFileFormat='.npy', colored=False) -> None:
+    def __init__(self, datasetPath:pathlib.Path, cityName:str, mapName='0105033050201', transform=None, fromCoordinates=False, mapfileFormat='.jpg', thumbnailFileFormat='.npy', colored=False, feature=None) -> None:
         self.tilingParameters = json.load(open(datasetPath / 'tilingParameters.json'))
         self.tilesCoordinates = self.tilingParameters['coordinates']
         self.mapName  = mapName
@@ -127,7 +172,7 @@ class Tiles(Dataset):
             self.classifiedPath = json.load(open(datasetPath / f'classifiedMaps/{cityName}/{mapName}.json'))
             self.cityfolderPath = next(datasetPath.glob(f'coloredMaps/{cityName}') )
             if fromCoordinates:
-                im = openfile(self.cityfolderPath / f'{self.mapName}{self.mapfileFormat}', self.mapfileFormat)
+                im = openfile(self.cityfolderPath / f'{self.mapName}{self.mapfileFormat}')
                 dilated = dilation(im)
                 eroded = erosion(im)
                 self.fullMap = ToTensor()(np.concatenate((im, dilated, eroded),1))
@@ -135,7 +180,7 @@ class Tiles(Dataset):
             self.cityfolderPath = next(datasetPath.glob(f'cities/{cityName}/*/*') )
             if fromCoordinates:
                 self.paddingMap = nn.ConstantPad2d((self.tilingParameters['paddingX'],self.tilingParameters['paddingX'], self.tilingParameters['paddingY'],self.tilingParameters['paddingY']),1)
-                im = openfile(self.cityfolderPath / f'{self.mapName}{self.mapfileFormat}', self.mapfileFormat)
+                im = openfile(self.cityfolderPath / f'{self.mapName}{self.mapfileFormat}')
                 self.fullMap = self.paddingMap(ToTensor()(im))
     
     def __len__(self):
@@ -147,7 +192,7 @@ class Tiles(Dataset):
         if self.fromCoordinates:
             sample['tile'] = self.fullMap[:,coordDict['yLow']:coordDict['yHigh'], coordDict['xLow']:coordDict['xHigh']]
         else:
-            sample['tile'] = ToTensor()(openfile(self.cityfolderPath / f'{self.mapName}_{index}{self.thumbnailFileFormat}', self.thumbnailFileFormat))
+            sample['tile'] = ToTensor()(openfile(self.cityfolderPath / f'{self.mapName}_{index}{self.thumbnailFileFormat}'))
         
         if self.transform:
             sample['tile'] = self.transform(sample)
@@ -192,7 +237,8 @@ class pad(object):
                 'mapName':sample['mapName']
                 }
 
-def openfile(filePath, fileExtension):
+def openfile(filePath:pathlib.Path):
+    fileExtension = filePath.suffix
     if fileExtension =='.npy':
         return np.load(filePath)
     elif fileExtension =='.jpg':
@@ -203,7 +249,7 @@ def openfile(filePath, fileExtension):
         raise ValueError ('Wrong fileExtension string')
 
 def matchKeyToName(pathToJsonfile:str, key : str):
-    cityKeysFile = openfile(pathToJsonfile,'.json')
+    cityKeysFile = openfile(pathToJsonfile)
     return cityKeysFile[key]['Town']
 
 def getTiffProperties(tiffImage, showDict = False, returnDict=False):    

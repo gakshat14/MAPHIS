@@ -13,6 +13,7 @@ from PIL import Image
 import pandas as pd
 import math
 from generateMaps import makeBatch
+import tensorboard
 
 from datasetsFunctions import syntheticCity
 
@@ -44,7 +45,7 @@ def main():
     parser.add_argument('--imageSize', required=False, type=int, default = 512)
     parser.add_argument('--epochs', required=False, type=int, default = 3)
     parser.add_argument('--numWorkers', required=False, type=int, default = 0)
-    parser.add_argument('--feature', required=False, type=str, default = 'buildings')
+    parser.add_argument('--featureName', required=False, type=str, default = 'buildings')
     parser.add_argument('--process', required=False, type=str, default = 'segment')
     args = parser.parse_args()
 
@@ -65,12 +66,12 @@ def main():
     modelSegment = models.segmentationModel(modelSegmentParameters)
     if not Path('saves').is_dir():
         Path('saves').mkdir(parents=True, exist_ok=True)
-    with open(f'saves/{args.feature}SegmentModelParameters.json', 'w') as saveFile:
+    with open(f'saves/{args.featureName}SegmentModelParameters.json', 'w') as saveFile:
         json.dump(modelSegmentParameters, saveFile)
     
-    if Path(f'saves/SegmentModelStateDict.pth').is_file():
-        print(f"Loading from {Path(f'saves/SegmentModelStateDict.pth')}")
-        modelSegment.load_state_dict(torch.load(f'saves/SegmentModelStateDict.pth'))
+    if Path(f'saves/{args.featureName}SegmentModelStateDict.pth').is_file():
+        print(f"Loading from {Path(f'saves/{args.featureName}SegmentModelStateDict.pth')}")
+        modelSegment.load_state_dict(torch.load(f'saves/{args.featureName}SegmentModelStateDict.pth'))
     
     modelSegment.to(device)
 
@@ -80,20 +81,28 @@ def main():
 
     nSamples = 1000
 
+    zeros = torch.zeros((args.batchSize,1,512,512), device=device)
+
     for epoch in range(args.epochs):
         running_loss = 0.0
 
         for i in range(nSamples):
             trainBatch, trainBatchMask = makeBatch(args.batchSize, patternsDict,  background)
             trainBatch = torch.from_numpy(trainBatch).float().to(device)
-            if args.feature =='':
-                allMasks = torch.from_numpy(sum(trainBatchMask.values())).float().to(device)
+            if args.featureName =='':
+                masks, masks_overlap = torch.from_numpy(sum(trainBatchMask.values())).float().to(device), zeros
+            elif args.featureName == 'labels':
+                masks, masks_overlap = torch.from_numpy(trainBatchMask[f'{args.featureName}']).float().to(device), torch.clamp(torch.from_numpy(trainBatchMask[f'trees']+trainBatchMask[f'buildings']),0,1).float().to(device)
+            elif args.featureName == 'trees':
+                masks, masks_overlap = torch.from_numpy(trainBatchMask[f'{args.featureName}']).float().to(device), torch.clamp(torch.from_numpy(trainBatchMask[f'labels']+trainBatchMask[f'buildings']),0,1).float().to(device)
+            elif args.featureName == 'buildings':
+                masks, masks_overlap = torch.from_numpy(trainBatchMask[f'{args.featureName}']).float().to(device), torch.clamp(torch.from_numpy(trainBatchMask[f'trees']+trainBatchMask[f'labels']),0,1).float().to(device)
             else:
-                allMasks = torch.from_numpy(trainBatchMask[f'{args.feature}']).float().to(device)
+                raise ValueError ("wrong FeatureName")
             optimizer.zero_grad()
             output = modelSegment(trainBatch)
             
-            loss = criterion(output, allMasks)
+            loss = criterion(output, masks) + criterion(output*masks_overlap, zeros)
 
             loss.backward()
             optimizer.step()
@@ -109,7 +118,7 @@ def main():
                 plt.title(f'Mask')
                 plt.show()"""
 
-        torch.save(modelSegment.state_dict(), f'saves/{args.feature}{args.process.capitalize()}ModelStateDict.pth')
+        torch.save(modelSegment.state_dict(), f'saves/{args.featureName}{args.process.capitalize()}ModelStateDict.pth')
 
 if __name__ == '__main__':
     main()

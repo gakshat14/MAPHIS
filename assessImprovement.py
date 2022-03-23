@@ -20,54 +20,52 @@ def erosion(src, dilateSize=1):
     return cv2.erode(src.astype('uint8'), element)
 
 featureNames = ['labels', 'buildings', 'trees']
+featureNames = ['buildings']
 
-colorisedMap = np.zeros((7590,11400,3), np.uint8)
+cityName = 'Luton'
+allTilesPaths = list(pathlib.Path(f'datasets/cities/{cityName}').glob(f'*/*/*.jpg'))[1:2]
 
-for featureName in featureNames:
+for tilePath in allTilesPaths:
+    tileName = tilePath.stem
+    print(f'Processing Tile {tileName}')
 
-    cityName = 'Luton'
+    colorisedMap = np.ones((7590,11400,3), np.uint8)
+    background = cv2.imread(f'{tilePath}')
 
-    tileName = '0105033010241'
+    for featureName in featureNames:
+        filePath = pathlib.Path(f'datasets/layers/{featureName}/{cityName}')       
 
-    filePath = pathlib.Path(f'datasets/layers/{featureName}/{cityName}')
+        segmentedMask = np.load(filePath.joinpath(f'{tileName}_segmented.npy'))[157:7590+157, 100:11400+100]
+        '''
+        if featureName == 'buildings':
+            segmentedMask = erosion(segmentedMask, 3)
+        '''
 
-    background = np.where(np.array(Image.open( f'datasets/cities/{cityName}/500/tp_1/{tileName}.jpg').convert('L'), np.float32) <100, 0, 1)
+        contours = cv2.findContours(segmentedMask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        contours = grab_contours(contours)
 
-    targetMask = np.load(filePath.joinpath(f'{tileName}_mask.npy'))
-    segmentedMask = np.load(filePath.joinpath(f'{tileName}_segmented.npy'))[157:7590+157, 100:11400+100]
+        nContours = 0
 
-    if featureName == 'buildings':
-        segmentedMask = erosion(segmentedMask, 3)
+        for i, contour in enumerate(contours):
+            area = cv2.contourArea(contour)
+            if area <= areaShapes[featureName]:
+                pass
+            else:        
+                M = cv2.moments(contour)
+                perimeter = cv2.arcLength(contour,True)
+                _, radiusEnclosingCircle = cv2.minEnclosingCircle(contour)
+                areaCircle = 3.1416 * radiusEnclosingCircle * radiusEnclosingCircle
+                circleness = area/areaCircle
+                (x, y, W, H) = cv2.boundingRect(contour)
+                rectangleness =  area / (W*H)
 
-    contours = cv2.findContours(segmentedMask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    contours = grab_contours(contours)
+                cv2.drawContours(colorisedMap, [contour], 0, colorDict[featureName], -1) 
+                nContours += 1
 
-    
-
-    nContours = 0
-
-    for i, contour in enumerate(contours):
-        area = cv2.contourArea(contour)
-        if area <= areaShapes[featureName]:
-            pass
-        else:        
-            M = cv2.moments(contour)
-            perimeter = cv2.arcLength(contour,True)
-            _, radiusEnclosingCircle = cv2.minEnclosingCircle(contour)
-            areaCircle = 3.1416 * radiusEnclosingCircle * radiusEnclosingCircle
-            circleness = area/areaCircle
-            (x, y, W, H) = cv2.boundingRect(contour)
-            rectangleness =  area / (W*H)
-
-            cv2.drawContours(colorisedMap, [contour], 0, colorDict[featureName], -1) 
-            nContours += 1
-
-    print(featureName)
-    jsonDict = json.load(open(filePath.joinpath(f'{tileName}.json')))
-    print(f'Target number of contours : {len(jsonDict[f"{featureName}"])} / detected number of contours : {nContours}')
-    areaTarget = targetMask.sum()/255
-    detectedTarget = colorisedMap.sum()/255
-    print(f'Target area : {areaTarget} / Detected area : {detectedTarget} : {detectedTarget/areaTarget}')
-
-    plt.matshow(colorisedMap)
-    plt.show()
+cv2.imwrite(f'{tileName}_raw.jpg', colorisedMap)
+alpha  = 0.5
+cv2.addWeighted(colorisedMap, alpha, background, 1 - alpha,0, background)
+#cv2.imwrite(f'datasets/visuals/overlays/{tileName}.jpg', background)
+cv2.imwrite(f'{tileName}.jpg', background)
+#np.save(f'datasets/visuals/overlays/{tileName}.npy', background)
+#np.save(f'datasets/visuals/masks/{tileName}.npy', colorisedMap)

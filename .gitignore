@@ -3,9 +3,16 @@ datasets/coloredMaps/
 datasets/syntheticCities/
 datasets/extractedShapes/
 datasets/layers/
+datasets/visuals/
+datasets/labels/
 city_drawer/saves/
 city_drawer/segmentedMaps/
+city_drawer/trainGAN.py
+city_drawer/datasetsFunctions.py
 misc.py
 boast.py
 evaluationLoop.py
 *.pyc
+hexagons/*
+__pycache__/
+city_drawer/trainGAN.py

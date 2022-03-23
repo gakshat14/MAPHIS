@@ -6,6 +6,7 @@ import glob
 from PIL import Image
 from matplotlib.figure import Figure
 import shutil
+import cv2
 import numpy as np
 from pathlib import Path
 import json
@@ -15,7 +16,10 @@ tolerance = 10
 class Application(ttk.Frame):
     def __init__(self, master:tk.Tk, cityName:str, datasetPath:Path, classifiedFolderPath:Path, tileFileFormat:str):
         super(Application, self).__init__()
-        self.featureName = 'buildings'
+        self.featureName = 'labels'
+        self.savePathVisuals = Path(f'{datasetPath}/visuals/{self.featureName}')
+        self.savePathVisuals.mkdir(parents=True, exist_ok=True)
+
         self.cityName = cityName
         self.datasetPath = datasetPath
 
@@ -57,6 +61,7 @@ class Application(ttk.Frame):
         rowButtonPredefined6 = 8
         rowButtonPredefined7 = 9
         rowTileInfo = rowButtonPredefined7+ 1
+        rowSave = rowTileInfo + 1
 
         self.buttonFrame = tk.Frame(master)
         self.buttonFrame.grid(row=rowButtonActions,column=0)
@@ -153,9 +158,19 @@ class Application(ttk.Frame):
         self.saveButton = ttk.Button(self.buttonFrame , text="Save progress", command=lambda:[self.saveProgress()])
         self.saveButton.grid(row=rowTileInfo,column=2)
 
+        self.saveNameTxtField = ttk.Entry(self.buttonFrame , text="Input savename")
+        self.saveNameTxtField.grid(row=rowSave,column=0)
+
+        self.saveImageButton = ttk.Button(self.buttonFrame , text="Save Image", command=lambda:[self.saveImage(), self.clearTextInput(self.saveNameTxtField)])
+        self.saveImageButton.grid(row=rowSave,column=1)
+
 
     def clearTextInput(self, textBoxAttribute):
         textBoxAttribute.delete(0, len(textBoxAttribute.get()))
+
+    def saveImage(self):
+        mat = self.currentlyOpenedMap[self.currentCoordinates['yTile']-self.paddingY:self.currentCoordinates['yTile']-self.paddingY+self.currentCoordinates['H'], self.currentCoordinates['xTile']-self.paddingX:self.currentCoordinates['xTile']-self.paddingX+self.currentCoordinates['W']]
+        cv2.imwrite(f'{self.savePathVisuals}/{self.saveNameTxtField.get()}.jpg', mat)
 
     def fileOpenFunction(self, filePath:Path) -> np.float32:
         
