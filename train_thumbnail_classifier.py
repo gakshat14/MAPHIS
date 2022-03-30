@@ -5,10 +5,8 @@ from torch.utils.data import DataLoader
 import numpy as np
 from pathlib import Path
 import json
-from models import labelExtractor
 import torch
 from city_drawer.models import segmentationModel
-from shapeExtraction import extractShapes
 import matplotlib.pyplot as plt
 
 def main():

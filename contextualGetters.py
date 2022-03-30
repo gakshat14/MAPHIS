@@ -1,37 +1,32 @@
 import argparse
 import pandas as pd
 from pyprojroot import here
-import numpy as np
+import pathlib
 from pathlib import Path
 from datasets.datasetsFunctions import matchKeyToName, openfile
 import matplotlib.pyplot as plt
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--datasetPath', required=False, type=str, default='datasets')
-parser.add_argument('--cityKey', required=False, type=str, default = '36')
-parser.add_argument('--classifType', required=False, type=str, default = 'Labels')
-args = parser.parse_args()
-
-cityName = matchKeyToName(f'{args.datasetPath}/cityKey.json', args.cityKey)
-
-def getClassDistributionFromDataframe(dataframe:pd.DataFrame, distribution:np.float32)->np.float32:
-    distribution = distribution.copy()
-    for value in dataframe.values():
-        distribution[value] +=1
-    return distribution
-
 def getLabels(dataframe:pd.DataFrame, x:int, y:int, distance:int) -> list:
     allLabels = dataframe.query('xTile-@distance<@x<xTile+@distance and yTile-@distance<@y<yTile+@distance')
     meaningfullLabels = allLabels[allLabels['class'] != 0]['class']
-    #getClassDistributionFromDataframe
     return meaningfullLabels
 
-classes = openfile(Path(f'{args.datasetPath}/classifiedLayers/classes.json'), '.json')
-dataframe = pd.read_json(here().joinpath('datasets/classifiedLayers/Luton/0105033010241.json'))
+def main(args):
+    cityName = matchKeyToName(pathlib.Path(f'{args.datasetPath}/cityKey.json'), args.cityKey)
+    classes = openfile(Path(f'{args.datasetPath}/classifiedLayers/classes.json'))
+    dataframe = pd.read_json(here().joinpath(f'datasets/classifiedLayers/{cityName}/{args.tileName}.json'))
+    x, y = 7290,4696
+    distance = 500
+    neighbouringLabels = getLabels(dataframe.transpose(), x,y, distance)
+    plt.hist(neighbouringLabels, bins=len(classes))
+    plt.xticks([i for i in range(len(classes))], classes, rotation=45)
+    #plt.imshow(openfile(pathlib.Path(f'{args.datasetPath}/cities/{cityName}/500/tp_1/{args.tileName}.jpg'))[y-constants.HEIGHTPADDING-distance:y-constants.HEIGHTPADDING+distance, x-constants.WIDTHPADDING-distance:x-constants.WIDTHPADDING+distance])
+    plt.show()
 
-fig, axs = plt.subplots(1, 1, tight_layout=True)
-
-# We can set the number of bins with the *bins* keyword argument.
-axs.hist(getLabels(dataframe.transpose(), 7290, 4696, 500), bins=len(classes))
-
-plt.show()
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--datasetPath', required=False, type=str, default='datasets')
+    parser.add_argument('--cityKey', required=False, type=str, default = '36')
+    parser.add_argument('--tileName', required=False, type=str, default= '0105033010241')
+    args = parser.parse_args()
+    main(args)

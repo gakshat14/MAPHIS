@@ -24,13 +24,13 @@ class Maps(Dataset):
     def __init__(self, datasetPath:pathlib.Path, cityName:str, fileFormat='.jpg', transform=None):
         self.mapsPath   = list(datasetPath.glob(f'cities/{cityName}/*/*/*{fileFormat}'))
         if fileFormat == '.jpg': 
-            self.height = constants.TILEHEIGHT
-            self.width  = constants.TILEWIDTH  
+            self.height = 7590
+            self.width  = 11400  
         elif fileFormat == '.tif':
             self.height = getTiffProperties(Image.open(self.mapsPath[0]), returnDict=True)['ImageLength'][0]
             self.width  = getTiffProperties(Image.open(self.mapsPath[0]), returnDict=True)['ImageWidth'][0]
         else:
-            raise Exception('Wrong File format : only jpg and tif accepted')        
+            raise Exception('Wrong File format : only png and tif accepted')        
         self.fileFormat = fileFormat
         
         self.evaluationData = list(datasetPath.glob(f'cities/{cityName}/*/*/*.csv'))
@@ -45,7 +45,7 @@ class Maps(Dataset):
         if self.fileFormat == '.tif':
             properties =  getTiffProperties(Image.open(self.mapsPath[index]), returnDict=True)
         else: 
-            properties =  f'No properties with {self.fileFormat} format.'
+            properties =  'No properties with '+self.fileFormat+' format.'
         map = ToTensor()(Image.open(self.mapsPath[index]))
         projection = open(self.projections[index], 'r').read() 
         metaData = extractMetaData(open(self.tfwData[index], 'r').read())
@@ -157,6 +157,28 @@ class Tiles(Dataset):
         if self.colored:
             sample['labels'] = one_hot(torch.tensor(self.classifiedPath[f'{index}']),5)
         return sample
+
+class unfold(object):
+    def __init__(self):
+        self.height = constants.TILEHEIGHT
+        self.width = 11400
+        self.kernelSize = 512
+        self.stride = (354,363)
+        self.unfold = nn.Unfold(kernel_size=self.kernelSize, stride = self.stride)
+        self.hRatio = int((self.height-self.kernelSize+2)/self.stride[0])
+        self.wRatio = int((self.width-self.kernelSize+2)/self.stride[1])
+        
+    def __call__(self, sample):
+        a = self.unfold(sample['map']).reshape(self.kernelSize,self.kernelSize,self.hRatio*self.wRatio)
+        return {'tiledMap': a.permute(2,0,1),
+                'map': sample['map'],
+                'tilePath':sample['tilePath'],
+                'properties':sample['properties'],
+                'projection':sample['projection'],
+                'metaData':sample['metaData'],
+                'boundaries':sample['boundaries'],
+                'mapName':sample['mapName']
+                }
 
 def openfile(filePath:pathlib.Path):
     fileExtension = filePath.suffix

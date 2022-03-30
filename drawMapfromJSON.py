@@ -12,7 +12,7 @@ dataframe.hist( color='steelblue', edgecolor='black', linewidth=1.0, xlabelsize=
 plt.show()
 '''
 
-featureName = 'trees'
+featureName = 'buildings'
 
 def getClassDistributionFromDataframe(dataframe:pd.DataFrame, distribution:np.float32)->np.float32:
     distribution = distribution.copy()

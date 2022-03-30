@@ -13,11 +13,6 @@ pathToShapeFolder = pathlib.Path(f'datasets/extractedShapes/{cityName}')
 
 pathsToLayers = pathlib.Path(f'datasets/layers/raw/{cityName}').iterdir()
 
-tilingParameters = {"height": 7590, "width": 11400, "kernelSize": 512, "paddingX": 0, "paddingY": 0, "strideX": 0, "strideY": 0, "nCols": 204, "nRows": 16}
-
-with open(f'datasets/layers/tilingParameters.json', 'w') as outfile:
-    json.dump(tilingParameters, outfile)
-
 for filePath in pathsToLayers: 
 
     pathToShape = pathToShapeFolder / filePath.stem

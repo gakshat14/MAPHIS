@@ -1,7 +1,6 @@
 import argparse
 from datasets.datasetsFunctions import matchKeyToName, openfile
 from pathlib import Path
-import json
 from pandas import DataFrame
 import numpy as np
 
@@ -12,9 +11,9 @@ def main():
     parser.add_argument('--classifType', required=False, type=str, default = 'Maps')
     args = parser.parse_args()
 
-    cityName = matchKeyToName(f'{args.datasetPath}/cityKey.json', args.cityKey)
+    cityName = matchKeyToName(Path(f'{args.datasetPath}/cityKey.json'), args.cityKey)
     classifiedTilesPaths = list(Path(f'{args.datasetPath}/classified{args.classifType}/{cityName}').glob('*.json'))
-    classes = openfile(Path(f'{args.datasetPath}/classifiedLayers/classes.json'), '.json')
+    classes = openfile(Path(f'{args.datasetPath}/classifiedLayers/classes.json'))
     print(classes)
     def getMapClassificationDistribution(pathToMap:Path) -> np.float32:
         mapDistribution = np.zeros(len(classes), np.float32)

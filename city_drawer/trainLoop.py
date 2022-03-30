@@ -2,7 +2,9 @@ from pathlib import Path, PurePath
 import torch
 import torch.nn as nn 
 import torch.optim as optim
-import torchvision
+import sys
+sys.path.append('../constants')
+import constants
 import argparse
 import models
 import json
@@ -15,7 +17,7 @@ from generateMaps import makeBatch
 from torch.utils.tensorboard import SummaryWriter
 from typing import Dict
 
-FEATURENAMES = [ 'trees', 'buildings', 'labels' ]
+FEATURENAMES = constants.FEATURENAME
 
 def loadBackground(mapName='0105033010241', cityName='Luton') -> np.float32:
     """Loads the background image, from which the actual patterns are extracted

@@ -4,20 +4,11 @@ import matplotlib.pyplot as plt
 import pathlib
 import cv2
 import json
-
-def dilation(src:np.float32, dilateSize=1):
-    element = cv2.getStructuringElement(cv2.MORPH_RECT, (2 * dilateSize + 1, 2 * dilateSize + 1),
-                                    (dilateSize, dilateSize))
-    return cv2.dilate(src.astype('uint8'), element)
-
-def erosion(src, dilateSize=1):
-    element = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilateSize + 1, 2 * dilateSize + 1),
-                                    (dilateSize, dilateSize))
-    return cv2.erode(src.astype('uint8'), element)
+import morphological_tools as morph_tools
 
 def extractShapes(segmentedMap:np.float32, savePath:pathlib.Path):
     segmentedMap = np.where(segmentedMap>0.5,1,0)
-    segmentedMap = erosion(segmentedMap, 3)
+    segmentedMap = morph_tools.erosion(segmentedMap, 3)
     contours = cv2.findContours(segmentedMap, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     contours = grab_contours(contours)
     shapeDict = {}
@@ -52,7 +43,7 @@ def extractShapes(segmentedMap:np.float32, savePath:pathlib.Path):
 
 def coloriseMap(segmentedMap:np.float32, savePath:pathlib.Path) -> np.uint8:
     segmentedMap = np.where(segmentedMap>0.5,1,0)
-    segmentedMap = erosion(segmentedMap, 3)
+    segmentedMap = morph_tools.erosion(segmentedMap, 3)
     contours = cv2.findContours(segmentedMap, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     contours = grab_contours(contours)
    
