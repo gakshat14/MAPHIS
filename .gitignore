@@ -6,6 +6,7 @@ datasets/layers/
 datasets/visuals/
 datasets/labels/
 city_drawer/saves/
+city_drawer/runs/
 city_drawer/segmentedMaps/
 city_drawer/trainGAN.py
 city_drawer/datasetsFunctions.py
