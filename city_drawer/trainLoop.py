@@ -5,7 +5,6 @@ import torch.optim as optim
 import torchvision
 import argparse
 import models
-import matplotlib.pyplot as plt
 import json
 from pyprojroot import here
 import numpy as np
@@ -13,22 +12,39 @@ from PIL import Image
 import pandas as pd
 import math
 from generateMaps import makeBatch
-import tensorboard
-
-from datasetsFunctions import syntheticCity
+from torch.utils.tensorboard import SummaryWriter
+from typing import Dict
 
 FEATURENAMES = [ 'trees', 'buildings', 'labels' ]
 
-def loadBackground(mapName='0105033010241', cityName='Luton'):
+def loadBackground(mapName='0105033010241', cityName='Luton') -> np.float32:
+    """Loads the background image, from which the actual patterns are extracted
+
+    Args:
+        mapName (str, optional): name of the map. Defaults to '0105033010241'.
+        cityName (str, optional): name of the city. Defaults to 'Luton'.
+
+    Returns:
+        np.float32: Binarised background image
+    """
     return np.where(np.array(Image.open( here() / f'datasets/cities/{cityName}/500/tp_1/{mapName}.jpg').convert('L'), np.float32) <100, 0, 1)
 
-def loadPatterns():
+def loadPatterns(mapName='0105033010241', cityName='Luton') -> Dict:
+    """Loads the patterns of a given tile of a given city.
+
+    Args:
+        mapName (str, optional): name of the map. Defaults to '0105033010241'.
+        cityName (str, optional): name of the city. Defaults to 'Luton'.
+
+    Returns:
+        Dict: dictionnary with all patterns coordinates
+    """
     sq2 = math.sqrt(2)
     sizes = [32,64,128,256,512]
     patternsDict = {}
     for featureName in FEATURENAMES:        
         patternsDict[featureName] = {}
-        fullDf = pd.DataFrame(json.load(open(here() / f'datasets/layers/{featureName}/Luton/0105033010241.json'))[f'{featureName}']).transpose() 
+        fullDf = pd.DataFrame(json.load(open(here() / f'datasets/layers/{featureName}/{cityName}/{mapName}.json'))[f'{featureName}']).transpose() 
         for size in sizes:
             sLow = size/2
             sHigh = size/sq2
@@ -45,20 +61,11 @@ def main():
     parser.add_argument('--imageSize', required=False, type=int, default = 512)
     parser.add_argument('--epochs', required=False, type=int, default = 3)
     parser.add_argument('--numWorkers', required=False, type=int, default = 0)
-    parser.add_argument('--featureName', required=False, type=str, default = 'buildings')
-    parser.add_argument('--process', required=False, type=str, default = 'segment')
+    parser.add_argument('--featureName', required=False, type=str, default = 'allFeatures')
     args = parser.parse_args()
 
-    transform = torchvision.transforms.Compose([
-        torchvision.transforms.ToTensor()
-        ])
-
-    datasetPath = Path(args.datasetPath)
     background = loadBackground()
     patternsDict = loadPatterns()
-
-    testBatch, testBatchMask = makeBatch(args.batchSize, patternsDict,  background)
-    allMasks = sum(testBatchMask.values())
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -66,12 +73,12 @@ def main():
     modelSegment = models.segmentationModel(modelSegmentParameters)
     if not Path('saves').is_dir():
         Path('saves').mkdir(parents=True, exist_ok=True)
-    with open(f'saves/{args.featureName}SegmentModelParameters.json', 'w') as saveFile:
+    with open(f'saves/{args.featureName}_parameters.json', 'w') as saveFile:
         json.dump(modelSegmentParameters, saveFile)
     
-    if Path(f'saves/{args.featureName}SegmentModelStateDict.pth').is_file():
-        print(f"Loading from {Path(f'saves/{args.featureName}SegmentModelStateDict.pth')}")
-        modelSegment.load_state_dict(torch.load(f'saves/{args.featureName}SegmentModelStateDict.pth'))
+    if Path(f'saves/allFeatures_state_dict.pth').is_file():
+        print(f"Loading from {Path(f'saves/{args.featureName}_state_dict.pth')}")
+        modelSegment.load_state_dict(torch.load(f'saves/{args.featureName}_state_dict.pth'))
     
     modelSegment.to(device)
 
@@ -83,13 +90,18 @@ def main():
 
     zeros = torch.zeros((args.batchSize,1,512,512), device=device)
 
+    test_batch , _ = makeBatch(args.batchSize, patternsDict,  background)
+    test_batch = torch.from_numpy(test_batch).float().to(device)
+    writer = SummaryWriter(log_dir = f'runs/{args.featureName}')
+    writer.add_graph(modelSegment,(test_batch))
+
     for epoch in range(args.epochs):
-        running_loss = 0.0
+        epoch_loss = 0.0
 
         for i in range(nSamples):
             trainBatch, trainBatchMask = makeBatch(args.batchSize, patternsDict,  background)
             trainBatch = torch.from_numpy(trainBatch).float().to(device)
-            if args.featureName =='':
+            if args.featureName =='allFeatures':
                 masks, masks_overlap = torch.from_numpy(sum(trainBatchMask.values())).float().to(device), zeros
             elif args.featureName == 'labels':
                 masks, masks_overlap = torch.from_numpy(trainBatchMask[f'{args.featureName}']).float().to(device), torch.clamp(torch.from_numpy(trainBatchMask[f'trees']+trainBatchMask[f'buildings']),0,1).float().to(device)
@@ -107,18 +119,16 @@ def main():
             loss.backward()
             optimizer.step()
 
-            running_loss += loss.item()
-            print(f'[{i}] / [{int(nSamples)}] --> Item loss = {loss.item():.4f}')
+            epoch_loss += loss.item()
+            if i %200 == 0 and i!=0:
+                print(f'[{i}] / [{int(nSamples)}] --> Item loss = {loss.item():.4f}')
 
-            """if i%150==0:
-                plt.imshow(output[0,0].detach().cpu())
-                plt.title(f'Segmented Image')
-                plt.show()
-                plt.imshow((allMasks)[0,0].detach().cpu())
-                plt.title(f'Mask')
-                plt.show()"""
+                output = modelSegment(test_batch)
+                writer.add_scalar(tag='epoch_loss', scalar_value=epoch_loss/200, global_step=int((epoch*nSamples+i)/200))
+                writer.add_image(tag = f'{args.featureName} segmented', img_tensor=output[0,0].detach().cpu(),dataformats='HW', global_step=int((epoch*nSamples+i)/200))
+                epoch_loss = 0.0
 
-        torch.save(modelSegment.state_dict(), f'saves/{args.featureName}{args.process.capitalize()}ModelStateDict.pth')
+        torch.save(modelSegment.state_dict(), f'saves/{args.featureName}_state_dict.pth')
 
 if __name__ == '__main__':
     main()

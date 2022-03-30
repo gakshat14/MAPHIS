@@ -65,7 +65,7 @@ class UNet2d(nn.Module):
         self.up6   = up2d(4*ngf, 2*ngf)
         self.up7   = up2d(2*ngf, ngf)
         self.conv3 = nn.Conv2d(ngf, inChannels, 3, stride=1, padding=1)
-        self.conv4 = nn.Conv2d(outChannels+inChannels, outChannels, 3, stride=1, padding=1)
+        self.conv4 = nn.Conv2d(inChannels, outChannels, 3, stride=1, padding=1)
         self.lRelu = nn.LeakyReLU(negative_slope=0.1)
         self.sigmoid = nn.Sigmoid()
         
@@ -87,7 +87,7 @@ class UNet2d(nn.Module):
         u6 = self.up6(u5, s2)
         u7 = self.up7(u6, s1)
         y0 = self.lRelu(self.conv3(u7))
-        y1 =self.sigmoid(self.conv4(torch.cat((y0, x), 1)))
+        y1 =self.sigmoid(self.conv4(y0))
         return y1
 
 class segmentationModel(nn.Module):

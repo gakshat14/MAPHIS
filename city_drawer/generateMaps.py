@@ -1,4 +1,3 @@
-from multiprocessing.sharedctypes import Value
 from typing import Tuple, Dict
 import numpy as np
 import math
@@ -6,9 +5,8 @@ import cv2
 import random
 from scipy import ndimage
 from skimage.draw import line, disk, ellipse_perimeter, circle_perimeter, rectangle_perimeter
-from pathlib import Path, PurePath
+from pathlib import  PurePath
 import matplotlib.pyplot as plt
-import glob
 import argparse
 from typing import Tuple
 from pyprojroot import here
@@ -31,8 +29,16 @@ NLINESMAX = 8
 
 smallSizes = [1,2,4,8,16]
 
-'''
+
 def generate_ellipsoid(maxLength:int) -> Tuple[list,list]:
+    """Generates the coordinates of an ellipsoid in a square
+
+    Args:
+        maxLength (int): square dimensions
+
+    Returns:
+        Tuple[list,list]: x and y coordinates of the ellipse
+    """
     radiusX = random.randint(int(maxLength/4), int(maxLength/3))
     radiusY = random.randint(int(maxLength/4), int(maxLength/3))
     centerX = random.randint(radiusX, maxLength-radiusX )
@@ -41,6 +47,14 @@ def generate_ellipsoid(maxLength:int) -> Tuple[list,list]:
     return rr, cc
     
 def generate_circle(maxLength:int) -> Tuple[list,list]:
+    """Generates the coordinates of a circle in a square
+
+    Args:
+        maxLength (int): square dimensions
+
+    Returns:
+        Tuple[list,list]: x and y coordinates of the circle
+    """
     radius = random.randint(int(maxLength/4), int(maxLength/3))
     centerX = random.randint(radius, maxLength-radius )
     centerY = random.randint(radius, maxLength-radius )
@@ -48,6 +62,14 @@ def generate_circle(maxLength:int) -> Tuple[list,list]:
     return rr, cc
 
 def generate_rectangle(maxLength:int) -> Tuple[list,list]:
+    """Generates the coordinates of a rectangle in a square
+
+    Args:
+        maxLength (int): square dimensions
+
+    Returns:
+        Tuple[list,list]: x and y coordinates of the rectangle
+    """
     extent_x = random.randint(int(maxLength/4), int(maxLength/3))
     extent_y = random.randint(int(maxLength/4), int(maxLength/3))      
     start_x = random.randint(extent_x, maxLength-extent_x)
@@ -58,15 +80,33 @@ def generate_rectangle(maxLength:int) -> Tuple[list,list]:
     return rr, cc
 
 def dilation(src:np.float32, dilateSize=1):
+    """Dilatation operation, can be applied to the image for map "cleaning"
+
+    Args:
+        src (np.float32): source image
+        dilateSize (int, optional): Dilatation kernel size. Defaults to 1.
+
+    Returns:
+        _type_: dilated image
+    """
     element = cv2.getStructuringElement(cv2.MORPH_RECT, (2 * dilateSize + 1, 2 * dilateSize + 1),
                                     (dilateSize, dilateSize))
     return cv2.dilate(src.astype('uint8'), element)
 
 def erosion(src, dilateSize=1):
+    """Erosion operation, can be applied to the image for map "cleaning"
+
+    Args:
+        src (np.float32): source image
+        dilateSize (int, optional): Erosion kernel size. Defaults to 1.
+
+    Returns:
+        _type_: eroded image
+    """
     element = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilateSize + 1, 2 * dilateSize + 1),
                                     (dilateSize, dilateSize))
     return cv2.erode(src.astype('uint8'), element)
-'''
+
 def crop(mat:np.float32, MARGIN:int, sizeImg:int) -> np.float32 :
     """Center crops a matrix
 

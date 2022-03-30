@@ -11,4 +11,4 @@ for cityPath in citiesPaths:
 
     nTiles += len(glob.glob(cityPath+'/*/*/*.tif'))
 
-print(f'Budget : {nTiles} x {nThumbnails} x {weightThumbnail} = {nTiles*nThumbnails*weightThumbnail:.2f} Mb = {nTiles*nThumbnails*weightThumbnail/1024:.2f} Gb = {nTiles*nThumbnails*weightThumbnail/(1024*1024):.2f} Tb')
+print(f'Budget : {nTiles} x {nThumbnails} x {weightThumbnail} (nTiles*nThumbnails*thumbnail Mb size) = {nTiles*nThumbnails*weightThumbnail:.2f} Mb = {nTiles*nThumbnails*weightThumbnail/1024:.2f} Gb = {nTiles*nThumbnails*weightThumbnail/(1024*1024):.2f} Tb')
