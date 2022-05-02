@@ -17,7 +17,7 @@ from generateMaps import makeBatch
 from torch.utils.tensorboard import SummaryWriter
 from typing import Dict
 
-FEATURENAMES = constants.FEATURENAME
+FEATURENAMES = constants.FEATURENAMES
 
 def loadBackground(mapName='0105033010241', cityName='Luton') -> np.float32:
     """Loads the background image, from which the actual patterns are extracted
@@ -94,6 +94,9 @@ def main():
 
     test_batch , _ = makeBatch(args.batchSize, patternsDict,  background)
     test_batch = torch.from_numpy(test_batch).float().to(device)
+
+    output = modelSegment(test_batch.float().to(device))
+
     writer = SummaryWriter(log_dir = f'runs/{args.featureName}')
     writer.add_graph(modelSegment,(test_batch))
 

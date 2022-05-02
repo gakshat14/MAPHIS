@@ -126,7 +126,7 @@ class segmentationModel(nn.Module):
         c11 = self.gaborFilters['11'](x)
         y = torch.cat((c5,c7,c9,c11),1)
         z = self.unet(y)
-        return z
+        return y
 
 class gaborFilters():
     def __init__(self, supportSize:int, frequency=1/8, sigma=3) -> None:
